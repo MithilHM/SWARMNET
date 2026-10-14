@@ -52,7 +52,10 @@ class ScenarioLoader:
         candidates = [
             Path("scenarios"),
             Path("../scenarios"),
+            Path("/app/scenarios"),
+            Path("/scenarios"),
             Path(__file__).parent.parent.parent.parent / "scenarios",
+            Path(__file__).parent.parent.parent / "scenarios",
         ]
         for p in candidates:
             if p.exists() and p.is_dir():

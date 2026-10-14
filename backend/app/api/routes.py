@@ -149,6 +149,14 @@ def get_decisions(run_id: str, limit: int = 50):
     return {"decisions": run_manager.get_decisions(run_id, limit=limit)}
 
 
+@router.get("/api/runs/{run_id}/nodes/{node_id}")
+def get_node(run_id: str, node_id: str):
+    try:
+        return run_manager.get_node_details(run_id, node_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.get("/api/runs/{run_id}/export")
 def export_run(run_id: str, format: str = Query("json", pattern="^(json|csv)$")):
     try:
@@ -170,3 +178,40 @@ def compare_policies(req: CompareExperimentRequest):
         return run_manager.compare_policies(scenario_id=req.scenario_id, seed=req.seed)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+class AgentRegisterRequest(BaseModel):
+    node_id: str
+    node_type: str
+    url: str
+
+
+class AgentHeartbeatRequest(BaseModel):
+    node_id: str
+    node_type: str
+    uptime: float = 0.0
+    buffer_used_bytes: int = 0
+
+
+@router.post("/api/agents/register")
+def register_agent(req: AgentRegisterRequest):
+    return run_manager.register_agent(
+        node_id=req.node_id,
+        node_type=req.node_type,
+        url=req.url,
+    )
+
+
+@router.post("/api/agents/heartbeat")
+def heartbeat_agent(req: AgentHeartbeatRequest):
+    return run_manager.record_agent_heartbeat(
+        node_id=req.node_id,
+        node_type=req.node_type,
+        uptime=req.uptime,
+        buffer_used_bytes=req.buffer_used_bytes,
+    )
+
+
+@router.get("/api/agents")
+def get_agents():
+    return {"agents": run_manager.get_registered_agents()}

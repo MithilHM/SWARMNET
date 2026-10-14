@@ -12,8 +12,8 @@ This document tracks implementation status across all phases defined in `PRD.md`
 - [x] **Phase 3 — Routing interface and baseline algorithm**
 - [x] **Phase 4 — SWARMNET contact-aware routing**
 - [x] **Phase 5 — API, run management, and persistence**
-- [ ] **Phase 6 — Containerized satellite and ground agents**
-- [ ] **Phase 7 — Frontend dashboard**
+- [x] **Phase 6 — Containerized satellite and ground agents**
+- [x] **Phase 7 — Frontend dashboard**
 - [ ] **Phase 8 — Experiments, baselines, and reproducible reports**
 - [ ] **Phase 9 — Hardening, documentation, and final demo**
 
@@ -71,18 +71,23 @@ This document tracks implementation status across all phases defined in `PRD.md`
 - [x] API integration tests (`test_api.py`) covering all endpoints, export, and comparisons (all passed).
 
 ### Phase 6: Containerized Agents
-- [ ] Dockerfile for backend and agent services.
-- [ ] `docker-compose.yml` for multi-agent deployment.
-- [ ] Agent HTTP/JSON endpoints and logical link isolation adapter.
-- [ ] Container tests and end-to-end multi-hop delivery verification.
+- [x] Dockerfile for backend and agent services (`backend/Dockerfile`).
+- [x] `docker-compose.yml` for multi-agent deployment (backend, sat-01 to sat-04, ground-01, frontend).
+- [x] Standalone HTTP agent server (`backend/app/agents/agent_service.py`) with unique node identity, buffer, and deduplication.
+- [x] Container transport adapter (`backend/app/transport/container_transport.py`) enforcing logical link availability.
+- [x] Backend agent registration & heartbeat routes (`/api/agents/register`, `/api/agents/heartbeat`, `/api/agents`).
+- [x] Node inspection endpoint (`GET /api/runs/{run_id}/nodes/{node_id}`).
+- [x] Unit and integration tests for container transport, logical isolation, and agent service (`test_container_transport.py`, `test_agent_service.py`) (all passed).
 
 ### Phase 7: Frontend Dashboard
-- [ ] React + TypeScript + Vite project with Tailwind / modern design tokens.
-- [ ] Interactive topology view (nodes, active/degraded links, buffer occupancy).
-- [ ] Live packet flow & event log.
-- [ ] Routing decision inspector.
-- [ ] Real-time metrics charts.
-- [ ] Scenario execution controls.
+- [x] React + TypeScript + Vite project (`frontend/`) with vanilla CSS design system and dark theme.
+- [x] Interactive SVG topology visualization with live link states, animated flow dashes, and radial buffer gauges (`TopologyTab.tsx`).
+- [x] Node and link inspection drawer (`TopologyTab.tsx`).
+- [x] Packet tracking table with status filtering, hop counters, and route history audit modal (`PacketsTab.tsx`).
+- [x] Autonomous routing decisions inspector with candidate neighbor score breakdowns and reason codes (`RoutingDecisionsTab.tsx`).
+- [x] Head-to-head policy comparison view with delta metrics and JSON/CSV export actions (`ComparisonTab.tsx`).
+- [x] Simulation controls: play/pause, step (+1s, +5s), reset, speed modifier, scenario/policy selectors, and keyboard shortcuts (`Header.tsx`, `App.tsx`).
+- [x] Production bundle verified with `npm run build` (0 TypeScript errors).
 
 ### Phase 8: Experiments & Comparative Reports
 - [ ] Automated comparison runner between Baseline and SWARMNET.

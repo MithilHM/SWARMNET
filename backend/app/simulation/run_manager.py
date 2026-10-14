@@ -38,6 +38,7 @@ class RunManager:
     def __init__(self, db: Optional[DatabaseManager] = None):
         self.db = db if db is not None else DatabaseManager()
         self.active_runs: Dict[str, RunInstance] = {}
+        self.registered_agents: Dict[str, Dict[str, Any]] = {}
 
     def create_run(
         self,
@@ -219,6 +220,112 @@ class RunManager:
             return []
         decisions = inst.engine.all_decisions[-limit:]
         return [d.model_dump() for d in decisions]
+
+    def get_node_details(self, run_id: str, node_id: str) -> Dict[str, Any]:
+        inst = self.active_runs.get(run_id)
+        if not inst:
+            raise KeyError(f"Run '{run_id}' not found.")
+
+        incident_links = [
+            l.model_dump()
+            for l in inst.engine.topology.links.values()
+            if l.source_node_id == node_id or l.target_node_id == node_id
+        ]
+        recent_decisions = [
+            d.model_dump()
+            for d in inst.engine.all_decisions
+            if d.satellite_id == node_id
+        ][-20:]
+
+        if node_id in inst.engine.topology.satellites:
+            sat = inst.engine.topology.satellites[node_id]
+            agent = inst.engine.satellite_agents.get(node_id)
+            buffer_pkts = (
+                [p.model_dump() for p in agent.buffer.get_eligible_packets(float("inf"))]
+                if agent and agent.buffer
+                else []
+            )
+            return {
+                "run_id": run_id,
+                "node_id": node_id,
+                "node_type": "satellite",
+                "status": sat.status.value,
+                "position": sat.position.model_dump() if sat.position else None,
+                "energy_percent": sat.energy_percent,
+                "buffer_capacity_bytes": sat.buffer_capacity_bytes,
+                "buffer_used_bytes": sat.buffer_used_bytes,
+                "buffer_packet_count": len(buffer_pkts),
+                "buffered_packets": buffer_pkts,
+                "neighbors": sat.neighbors,
+                "incident_links": incident_links,
+                "recent_decisions": recent_decisions,
+                "last_state_update": sat.last_state_update,
+            }
+        elif node_id in inst.engine.topology.ground_stations:
+            gs = inst.engine.topology.ground_stations[node_id]
+            agent = inst.engine.ground_agents.get(node_id)
+            received_pkts = (
+                [p.model_dump() for p in agent.received_packets.values()]
+                if agent
+                else []
+            )
+            return {
+                "run_id": run_id,
+                "node_id": node_id,
+                "node_type": "ground_station",
+                "status": gs.status.value,
+                "position": gs.position.model_dump() if gs.position else None,
+                "total_bytes_received": gs.total_bytes_received,
+                "received_packet_count": len(gs.received_packet_ids),
+                "received_packets": received_pkts,
+                "last_contact_time": gs.last_contact_time,
+                "incident_links": incident_links,
+            }
+        else:
+            raise KeyError(f"Node '{node_id}' not found in run '{run_id}'.")
+
+    def register_agent(self, node_id: str, node_type: str, url: str) -> Dict[str, Any]:
+        self.registered_agents[node_id] = {
+            "node_id": node_id,
+            "node_type": node_type,
+            "url": url,
+            "registered_at": time.time(),
+            "last_heartbeat_at": time.time(),
+            "heartbeat_count": 1,
+            "status": "healthy",
+            "buffer_used_bytes": 0,
+        }
+        return {"status": "registered", "node_id": node_id}
+
+    def record_agent_heartbeat(
+        self, node_id: str, node_type: str, uptime: float, buffer_used_bytes: int = 0
+    ) -> Dict[str, Any]:
+        if node_id in self.registered_agents:
+            self.registered_agents[node_id]["last_heartbeat_at"] = time.time()
+            self.registered_agents[node_id]["heartbeat_count"] += 1
+            self.registered_agents[node_id]["uptime"] = uptime
+            self.registered_agents[node_id]["buffer_used_bytes"] = buffer_used_bytes
+            self.registered_agents[node_id]["status"] = "healthy"
+        else:
+            self.registered_agents[node_id] = {
+                "node_id": node_id,
+                "node_type": node_type,
+                "url": f"http://{node_id.lower().replace('-', '_')}:8100",
+                "registered_at": time.time(),
+                "last_heartbeat_at": time.time(),
+                "heartbeat_count": 1,
+                "status": "healthy",
+                "uptime": uptime,
+                "buffer_used_bytes": buffer_used_bytes,
+            }
+        return {"status": "ok", "node_id": node_id}
+
+    def get_registered_agents(self) -> List[Dict[str, Any]]:
+        now = time.time()
+        for agent in self.registered_agents.values():
+            if now - agent.get("last_heartbeat_at", 0) > 30:
+                agent["status"] = "unresponsive"
+        return list(self.registered_agents.values())
 
     def compare_policies(self, scenario_id: str, seed: int = 42) -> Dict[str, Any]:
         """Run identical scenario & seed with baseline vs swarmnet policies and return comparative metrics."""
