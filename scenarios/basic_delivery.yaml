@@ -1,0 +1,85 @@
+scenario:
+  id: basic_delivery
+  name: "Basic Multi-Hop Delivery"
+  description: "Stable multi-hop satellite route delivering packets directly to a ground station"
+  seed: 42
+  duration_seconds: 60
+  tick_seconds: 1
+
+network:
+  satellites:
+    - id: SAT-01
+      position: { x: 100, y: 150 }
+      buffer_capacity_bytes: 1048576
+      energy_percent: 100.0
+    - id: SAT-02
+      position: { x: 250, y: 150 }
+      buffer_capacity_bytes: 1048576
+      energy_percent: 100.0
+    - id: SAT-03
+      position: { x: 400, y: 150 }
+      buffer_capacity_bytes: 1048576
+      energy_percent: 100.0
+  ground_stations:
+    - id: GROUND-01
+      position: { x: 550, y: 150 }
+  default_buffer_capacity_bytes: 1048576
+
+traffic:
+  - source: SAT-01
+    destination: GROUND-01
+    packets_per_second: 1.0
+    payload_size_bytes: 4096
+    priority: normal
+    ttl_seconds: 120
+    max_hops: 10
+    start_time: 1.0
+    stop_time: 5.0
+    packet_count_limit: 5
+
+routing:
+  policy: swarmnet
+  weights:
+    progress: 0.30
+    reliability: 0.20
+    contact_feasibility: 0.20
+    latency: 0.15
+    congestion: 0.10
+    energy: 0.05
+
+links:
+  - id: SAT-01-SAT-02
+    source: SAT-01
+    target: SAT-02
+    latency_ms: 30
+    bandwidth_mbps: 10
+    reliability: 1.0
+    symmetric: true
+    schedule:
+      - start: 0
+        end: 60
+        available: true
+
+  - id: SAT-02-SAT-03
+    source: SAT-02
+    target: SAT-03
+    latency_ms: 30
+    bandwidth_mbps: 10
+    reliability: 1.0
+    symmetric: true
+    schedule:
+      - start: 0
+        end: 60
+        available: true
+
+  - id: SAT-03-GROUND-01
+    source: SAT-03
+    target: GROUND-01
+    latency_ms: 45
+    bandwidth_mbps: 15
+    reliability: 1.0
+    symmetric: true
+    schedule:
+      - start: 0
+        end: 60
+        available: true

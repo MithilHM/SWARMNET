@@ -1,0 +1,130 @@
+scenario:
+  id: route_disruption
+  name: "Route Disruption & Dynamic Rerouting"
+  description: "Primary link degrades triggering alternate route selection, followed by ground partition and store-and-forward recovery"
+  seed: 42
+  duration_seconds: 60
+  tick_seconds: 1
+
+network:
+  satellites:
+    - id: SAT-01
+      position: { x: 100, y: 150 }
+      buffer_capacity_bytes: 1048576
+      energy_percent: 100.0
+    - id: SAT-02
+      position: { x: 250, y: 80 }
+      buffer_capacity_bytes: 1048576
+      energy_percent: 100.0
+    - id: SAT-03
+      position: { x: 250, y: 220 }
+      buffer_capacity_bytes: 1048576
+      energy_percent: 100.0
+    - id: SAT-04
+      position: { x: 400, y: 150 }
+      buffer_capacity_bytes: 1048576
+      energy_percent: 100.0
+  ground_stations:
+    - id: GROUND-01
+      position: { x: 550, y: 150 }
+  default_buffer_capacity_bytes: 1048576
+
+traffic:
+  - source: SAT-01
+    destination: GROUND-01
+    packets_per_second: 0.5
+    payload_size_bytes: 4096
+    priority: normal
+    ttl_seconds: 120
+    max_hops: 15
+    start_time: 1.0
+    stop_time: 30.0
+    packet_count_limit: 15
+
+routing:
+  policy: swarmnet
+  weights:
+    progress: 0.30
+    reliability: 0.20
+    contact_feasibility: 0.20
+    latency: 0.15
+    congestion: 0.10
+    energy: 0.05
+
+links:
+  # Path A: SAT-01 to SAT-02
+  - id: SAT-01-SAT-02
+    source: SAT-01
+    target: SAT-02
+    latency_ms: 25
+    bandwidth_mbps: 10
+    reliability: 0.98
+    symmetric: true
+    schedule:
+      - start: 0
+        end: 60
+        available: true
+
+  # Path A link 2: SAT-02 to SAT-04 (degrades/drops at t=10)
+  - id: SAT-02-SAT-04
+    source: SAT-02
+    target: SAT-04
+    latency_ms: 30
+    bandwidth_mbps: 10
+    reliability: 0.95
+    symmetric: true
+    schedule:
+      - start: 0
+        end: 10
+        available: true
+      - start: 10
+        end: 60
+        available: false
+
+  # Path B: SAT-01 to SAT-03 (opens at t=15)
+  - id: SAT-01-SAT-03
+    source: SAT-01
+    target: SAT-03
+    latency_ms: 30
+    bandwidth_mbps: 10
+    reliability: 0.99
+    symmetric: true
+    schedule:
+      - start: 0
+        end: 15
+        available: false
+      - start: 15
+        end: 60
+        available: true
+
+  # Path B link 2: SAT-03 to SAT-04
+  - id: SAT-03-SAT-04
+    source: SAT-03
+    target: SAT-04
+    latency_ms: 25
+    bandwidth_mbps: 10
+    reliability: 0.99
+    symmetric: true
+    schedule:
+      - start: 0
+        end: 60
+        available: true
+
+  # Downlink: SAT-04 to GROUND-01 (drops t=25 to t=40)
+  - id: SAT-04-GROUND-01
+    source: SAT-04
+    target: GROUND-01
+    latency_ms: 45
+    bandwidth_mbps: 15
+    reliability: 0.98
+    symmetric: true
+    schedule:
+      - start: 0
+        end: 25
+        available: true
+      - start: 25
+        end: 40
+        available: false
+      - start: 40
+        end: 60
+        available: true
