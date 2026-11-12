@@ -77,6 +77,18 @@ export interface Packet {
   route_history: RouteHop[];
 }
 
+export interface CandidateScoreBreakdown {
+  neighbor_id?: string;
+  total_score?: number;
+  progress_score?: number;
+  reliability_score?: number;
+  contact_score?: number;
+  latency_penalty?: number;
+  congestion_penalty?: number;
+  energy_penalty?: number;
+  link_available?: boolean;
+}
+
 export interface RouteDecision {
   decision_id: string;
   packet_id: string;
@@ -84,9 +96,10 @@ export interface RouteDecision {
   chosen_next_hop_id?: string | null;
   decision: "forward" | "buffer" | "drop";
   reason_code: string;
-  candidate_scores: Record<string, number>;
+  candidate_scores: Record<string, CandidateScoreBreakdown | number>;
   decision_time: number;
   routing_policy: string;
+  explanation?: string | null;
 }
 
 export interface MetricsSummary {
@@ -126,13 +139,23 @@ export interface SimulationRun {
   metrics_summary: MetricsSummary;
 }
 
+export interface InTransitPacket {
+  packet_id: string;
+  link_id: string;
+  source: string;
+  target: string;
+  departure_time: number;
+  arrival_time: number;
+  payload_size_bytes: number;
+}
+
 export interface TopologyData {
   run_id: string;
   simulated_time: number;
   satellites: SatelliteNode[];
   ground_stations: GroundStationNode[];
   links: Link[];
-  in_transit: unknown[];
+  in_transit: InTransitPacket[];
 }
 
 export interface ScenarioSummary {

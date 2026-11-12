@@ -1,11 +1,20 @@
 """Interpretable multi-factor scoring functions for SWARMNET contact-aware routing."""
 
+import math
 from typing import Optional, Tuple
 from app.models.scenario import RoutingWeights
 from app.models.link import Link
-from app.models.node import SatelliteNode, GroundStationNode
+from app.models.node import SatelliteNode, GroundStationNode, NodePosition
 from app.models.decision import CandidateScore
 from app.simulation.topology import TopologyManager
+
+
+def _get_node_pos(topology: TopologyManager, node_id: str) -> Optional[NodePosition]:
+    if node_id in topology.satellites:
+        return topology.satellites[node_id].position
+    if node_id in topology.ground_stations:
+        return topology.ground_stations[node_id].position
+    return None
 
 
 def compute_candidate_score(
@@ -63,12 +72,21 @@ def compute_candidate_score(
         if candidate_to_dest and candidate_to_dest.is_available:
             progress_score = 0.8
         else:
-            # Estimate progress based on position or active neighbor reachability
+            # Estimate progress based on position and active neighbor reachability
             cand_links = topology.get_outgoing_links(candidate_node_id, active_only=True)
             if any(l.target_node_id == destination_id for l in cand_links):
                 progress_score = 0.7
             elif len(cand_links) > 1:
-                progress_score = 0.5
+                # Geometric refinement when downstream links exist
+                curr_pos = _get_node_pos(topology, current_node_id)
+                cand_pos = _get_node_pos(topology, candidate_node_id)
+                dest_pos = _get_node_pos(topology, destination_id)
+                if curr_pos and cand_pos and dest_pos:
+                    dist_curr = math.sqrt((curr_pos.x - dest_pos.x) ** 2 + (curr_pos.y - dest_pos.y) ** 2)
+                    dist_cand = math.sqrt((cand_pos.x - dest_pos.x) ** 2 + (cand_pos.y - dest_pos.y) ** 2)
+                    progress_score = 0.55 if dist_cand < dist_curr else 0.45
+                else:
+                    progress_score = 0.5
             elif len(cand_links) == 1:
                 progress_score = 0.3
             else:
@@ -88,11 +106,15 @@ def compute_candidate_score(
         congestion_penalty = min(1.0, max(0.0, congestion_penalty))
 
     # 7. Energy penalty
+    # Penalize candidate if it is a satellite with low energy to avoid exhausting critical nodes
     energy_penalty = 0.0
+    cand_sat = topology.satellites.get(candidate_node_id)
     curr_sat = topology.satellites.get(current_node_id)
-    if curr_sat:
+    if cand_sat:
+        energy_penalty = 1.0 - (cand_sat.energy_percent / 100.0)
+    elif curr_sat:
         energy_penalty = 1.0 - (curr_sat.energy_percent / 100.0)
-        energy_penalty = min(1.0, max(0.0, energy_penalty))
+    energy_penalty = min(1.0, max(0.0, energy_penalty))
 
     # Multi-factor score
     total_score = (

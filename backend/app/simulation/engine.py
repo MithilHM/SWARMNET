@@ -21,8 +21,15 @@ from app.routing import get_routing_policy
 
 
 class SimulationEngine:
-    def __init__(self, scenario: ScenarioConfig):
+    def __init__(
+        self,
+        scenario: ScenarioConfig,
+        transport_mode: str = "in_process",
+        node_url_map: Optional[Dict[str, str]] = None,
+    ):
         self.scenario = scenario
+        self.transport_mode = transport_mode
+        self.node_url_map = node_url_map or {}
         self.rng = random.Random(scenario.scenario.seed)
         self.clock = SimulationClock(
             tick_seconds=scenario.scenario.tick_seconds,
@@ -30,7 +37,11 @@ class SimulationEngine:
         )
         self.topology = TopologyManager()
         self.event_scheduler = EventScheduler(self.topology)
-        self.transport = InProcessTransport(rng=random.Random(scenario.scenario.seed + 1))
+        if self.transport_mode == "container":
+            from app.transport.container_transport import ContainerTransport
+            self.transport = ContainerTransport(self.topology, self.node_url_map)
+        else:
+            self.transport = InProcessTransport(rng=random.Random(scenario.scenario.seed + 1))
         self.traffic_generator = TrafficGenerator(scenario.traffic)
 
         self.satellite_agents: Dict[str, SatelliteAgent] = {}
@@ -143,6 +154,12 @@ class SimulationEngine:
                     if delivered:
                         self.metrics.packets_delivered += 1
                         self.metrics.total_bytes_delivered += packet.payload_size_bytes
+                        if target_id in self.topology.ground_stations:
+                            gs = self.topology.ground_stations[target_id]
+                            if packet.packet_id not in gs.received_packet_ids:
+                                gs.received_packet_ids.append(packet.packet_id)
+                            gs.total_bytes_received += packet.payload_size_bytes
+                            gs.last_contact_time = current_time
                         self._emit_event(
                             TopologyEvent(
                                 simulated_time=current_time,
@@ -321,7 +338,11 @@ class SimulationEngine:
         self.clock.reset()
         self.topology = TopologyManager()
         self.event_scheduler = EventScheduler(self.topology)
-        self.transport = InProcessTransport(rng=random.Random(self.scenario.scenario.seed + 1))
+        if self.transport_mode == "container":
+            from app.transport.container_transport import ContainerTransport
+            self.transport = ContainerTransport(self.topology, self.node_url_map)
+        else:
+            self.transport = InProcessTransport(rng=random.Random(self.scenario.scenario.seed + 1))
         self.traffic_generator.reset()
         self.satellite_agents.clear()
         self.ground_agents.clear()

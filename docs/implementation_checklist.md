@@ -14,8 +14,8 @@ This document tracks implementation status across all phases defined in `PRD.md`
 - [x] **Phase 5 — API, run management, and persistence**
 - [x] **Phase 6 — Containerized satellite and ground agents**
 - [x] **Phase 7 — Frontend dashboard**
-- [ ] **Phase 8 — Experiments, baselines, and reproducible reports**
-- [ ] **Phase 9 — Hardening, documentation, and final demo**
+- [x] **Phase 8 — Experiments, baselines, and reproducible reports**
+- [x] **Phase 9 — Hardening, documentation, and final demo**
 
 ---
 
@@ -52,6 +52,7 @@ This document tracks implementation status across all phases defined in `PRD.md`
 - [x] `RoutingPolicy` abstract interface (`routing/base.py`).
 - [x] `ShortestPathRoutingPolicy` baseline Dijkstra over active links (`routing/shortest_path.py`).
 - [x] In-process link transport enforcing bandwidth, propagation latency, and serialization time (`transport/in_process.py`).
+- [x] Link serialization queuing modeling FIFO link contention.
 - [x] Automatic re-evaluation on topology changes.
 - [x] Decision logging with structured reasons (`app/agents/satellite_agent.py`).
 - [x] Tests for shortest path routing, partition buffering, and recovery (all passed).
@@ -59,6 +60,8 @@ This document tracks implementation status across all phases defined in `PRD.md`
 ### Phase 4: SWARMNET Contact-Aware Routing
 - [x] Candidate filtering: loop prevention, contact feasibility check (`routing/scoring.py`).
 - [x] Interpretable multi-factor scoring: progress, reliability, contact feasibility, latency, congestion, energy.
+- [x] Geometric coordinates & downstream reachability evaluation for candidate progress scoring.
+- [x] Radio transmission energy depletion modeling per packet.
 - [x] Configurable weights from scenario config (`RoutingWeights`).
 - [x] Decision explanations & structured telemetry recorded in `RouteDecision`.
 - [x] Unit & scenario tests comparing routing decisions (`test_routing_swarmnet.py`, `test_scenario_delivery.py`) (all passed).
@@ -73,8 +76,9 @@ This document tracks implementation status across all phases defined in `PRD.md`
 ### Phase 6: Containerized Agents
 - [x] Dockerfile for backend and agent services (`backend/Dockerfile`).
 - [x] `docker-compose.yml` for multi-agent deployment (backend, sat-01 to sat-04, ground-01, frontend).
-- [x] Standalone HTTP agent server (`backend/app/agents/agent_service.py`) with unique node identity, buffer, and deduplication.
+- [x] Standalone HTTP agent server (`backend/app/agents/agent_service.py`) with modern FastAPI lifespan context manager.
 - [x] Container transport adapter (`backend/app/transport/container_transport.py`) enforcing logical link availability.
+- [x] Dual-mode execution support in `SimulationEngine` (`in_process` vs. `container`).
 - [x] Backend agent registration & heartbeat routes (`/api/agents/register`, `/api/agents/heartbeat`, `/api/agents`).
 - [x] Node inspection endpoint (`GET /api/runs/{run_id}/nodes/{node_id}`).
 - [x] Unit and integration tests for container transport, logical isolation, and agent service (`test_container_transport.py`, `test_agent_service.py`) (all passed).
@@ -82,6 +86,7 @@ This document tracks implementation status across all phases defined in `PRD.md`
 ### Phase 7: Frontend Dashboard
 - [x] React + TypeScript + Vite project (`frontend/`) with vanilla CSS design system and dark theme.
 - [x] Interactive SVG topology visualization with live link states, animated flow dashes, and radial buffer gauges (`TopologyTab.tsx`).
+- [x] Live WebSocket event subscription streaming for real-time telemetry updates (`App.tsx`).
 - [x] Node and link inspection drawer (`TopologyTab.tsx`).
 - [x] Packet tracking table with status filtering, hop counters, and route history audit modal (`PacketsTab.tsx`).
 - [x] Autonomous routing decisions inspector with candidate neighbor score breakdowns and reason codes (`RoutingDecisionsTab.tsx`).
@@ -90,13 +95,15 @@ This document tracks implementation status across all phases defined in `PRD.md`
 - [x] Production bundle verified with `npm run build` (0 TypeScript errors).
 
 ### Phase 8: Experiments & Comparative Reports
-- [ ] Automated comparison runner between Baseline and SWARMNET.
-- [ ] Detailed metric computations (delivery ratio, delay percentiles, hop count, etc.).
-- [ ] CSV and JSON export endpoints.
-- [ ] `docs/experiment-methodology.md`.
+- [x] Fourth stress-test scenario added: `scenarios/buffer_pressure.yaml` (16 KB constrained buffers).
+- [x] Automated comparison runner (`backend/app/experiments/runner.py` & `scripts/run_experiments.py`) across all scenarios.
+- [x] Detailed metric computations (delivery ratio, mean/median/p95 delay percentiles, hop count, drop reasons).
+- [x] Automated CSV and JSON exports to `data/experiments/latest_benchmark.json` and `.csv`.
+- [x] Methodology documentation written (`docs/experiment-methodology.md`).
 
 ### Phase 9: Hardening, Documentation & Demo
-- [ ] Complete test suite execution (backend + frontend).
-- [ ] `docs/demo-script.md` with step-by-step presentation walkthrough.
-- [ ] Root `README.md` with complete installation and execution guide.
-- [ ] Final verification against all acceptance criteria.
+- [x] Complete test suite passing: 36 backend tests passed, frontend Vite production build 100% verified.
+- [x] Detailed 5-minute presentation script (`docs/demo-script.md`) covering multi-hop delivery, link failures, store-and-forward recovery, and comparative evaluation.
+- [x] Master `README.md` at project root with complete installation, architecture, Docker instructions, and benchmark results.
+- [x] Convenience launchers added: `scripts/run_demo.bat` (Windows), `scripts/run_demo.sh` (Linux/Mac), and root `Makefile`.
+- [x] Final verification completed against all PRD acceptance criteria.

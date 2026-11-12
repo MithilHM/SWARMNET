@@ -28,6 +28,7 @@ class SimulationClock:
     def reset(self) -> None:
         self.simulated_time = 0.0
         self.is_running = False
+        self._tick_callbacks.clear()
 
     def has_ended(self) -> bool:
         return self.simulated_time >= self.max_duration

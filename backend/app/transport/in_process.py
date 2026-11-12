@@ -29,6 +29,7 @@ class InProcessTransport(LinkTransport):
         self.rng = rng if rng is not None else random.Random(42)
         self._in_transit: List[InTransitItem] = []
         self.total_transferred_bytes_by_link: Dict[str, int] = {}
+        self.link_next_available_time: Dict[str, float] = {}
 
     def send_packet(
         self,
@@ -39,8 +40,10 @@ class InProcessTransport(LinkTransport):
         if not link.is_available:
             return False
 
+        # Link serialization queue: transmission starts after preceding packets finish on this link
+        start_time = max(current_time, self.link_next_available_time.get(link.link_id, current_time))
         duration = link.transfer_time_seconds(packet.payload_size_bytes)
-        arrival_time = round(current_time + duration, 4)
+        arrival_time = round(start_time + duration, 4)
 
         # Check contact window feasibility
         if link.contact_end_time is not None and arrival_time > link.contact_end_time:
@@ -51,11 +54,12 @@ class InProcessTransport(LinkTransport):
         will_succeed = roll <= link.reliability
 
         packet.status = PacketStatus.IN_TRANSIT
+        self.link_next_available_time[link.link_id] = arrival_time
         self._in_transit.append(
             InTransitItem(
                 packet=packet,
                 link=link,
-                departure_time=current_time,
+                departure_time=start_time,
                 arrival_time=arrival_time,
                 will_succeed=will_succeed,
             )
@@ -124,3 +128,4 @@ class InProcessTransport(LinkTransport):
     def reset(self) -> None:
         self._in_transit.clear()
         self.total_transferred_bytes_by_link.clear()
+        self.link_next_available_time.clear()

@@ -136,3 +136,49 @@ def test_swarmnet_buffers_when_partitioned():
     assert decision.decision == DecisionAction.BUFFER
     assert decision.reason_code == DecisionReasonCode.NO_ROUTE
     assert decision.chosen_next_hop_id is None
+
+
+def test_swarmnet_avoids_low_energy_satellite():
+    """When one candidate satellite has depleted battery (15%), prefer the candidate with healthy battery (95%)."""
+    topo = TopologyManager()
+    topo.add_satellite(SatelliteNode(satellite_id="SAT-01", status=NodeStatus.ACTIVE))
+    topo.add_satellite(SatelliteNode(satellite_id="SAT-02", energy_percent=15.0, status=NodeStatus.ACTIVE))
+    topo.add_satellite(SatelliteNode(satellite_id="SAT-03", energy_percent=95.0, status=NodeStatus.ACTIVE))
+    topo.add_ground_station(GroundStationNode(ground_station_id="GROUND-01", status=NodeStatus.ACTIVE))
+
+    # Identical links to both SAT-02 and SAT-03
+    topo.add_link(
+        Link(
+            link_id="SAT-01-SAT-02",
+            source_node_id="SAT-01",
+            target_node_id="SAT-02",
+            latency_ms=20.0,
+            reliability=1.0,
+            is_available=True,
+        )
+    )
+    topo.add_link(
+        Link(
+            link_id="SAT-01-SAT-03",
+            source_node_id="SAT-01",
+            target_node_id="SAT-03",
+            latency_ms=20.0,
+            reliability=1.0,
+            is_available=True,
+        )
+    )
+
+    weights = RoutingWeights(progress=0.2, reliability=0.2, contact_feasibility=0.2, latency=0.1, energy=0.3)
+    router = SwarmnetRoutingPolicy(weights=weights)
+    pkt = Packet(
+        source_node_id="SAT-01",
+        destination_node_id="GROUND-01",
+        created_at=0.0,
+        current_node_id="SAT-01",
+    )
+
+    decision = router.evaluate_next_hop("SAT-01", pkt, topo, current_time=0.0)
+    assert decision.decision == DecisionAction.FORWARD
+    assert decision.chosen_next_hop_id == "SAT-03"
+    assert decision.candidate_scores["SAT-02"].energy_penalty > decision.candidate_scores["SAT-03"].energy_penalty
+

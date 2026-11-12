@@ -546,3 +546,76 @@ body {
   stroke-dasharray: 6 6;
   animation: linkFlow 1.2s linear infinite;
 }
+
+/* Flying packet pulsing glow */
+@keyframes packetGlow {
+  0%, 100% { filter: drop-shadow(0 0 4px #00f0ff); transform: scale(1); }
+  50% { filter: drop-shadow(0 0 10px #38bdf8); transform: scale(1.1); }
+}
+.packet-glow {
+  animation: packetGlow 1s infinite ease-in-out;
+  transform-origin: center;
+}
+
+/* Real-time decision callout animation */
+@keyframes decisionCallout {
+  0% { opacity: 0; transform: translateY(-8px) scale(0.9); }
+  25% { opacity: 1; transform: translateY(0) scale(1.05); }
+  100% { opacity: 0.95; transform: translateY(0) scale(1); }
+}
+.decision-callout {
+  animation: decisionCallout 0.4s ease-out forwards;
+}
+
+/* Expanding decision ripple */
+@keyframes decisionRipple {
+  0% { r: 22px; opacity: 0.9; stroke-width: 3px; }
+  100% { r: 52px; opacity: 0; stroke-width: 0.5px; }
+}
+.decision-ripple {
+  animation: decisionRipple 1.8s infinite cubic-bezier(0.1, 0.7, 0.1, 1);
+}
+
+/* Ground station delivery radar ping */
+@keyframes radarPing {
+  0% { r: 24px; opacity: 0.8; stroke-width: 2.5px; }
+  100% { r: 70px; opacity: 0; stroke-width: 0.5px; }
+}
+.radar-ping {
+  animation: radarPing 2.0s infinite cubic-bezier(0, 0.4, 0.8, 1);
+}
+
+@keyframes radarPing2 {
+  0% { r: 24px; opacity: 0.6; stroke-width: 2px; }
+  100% { r: 85px; opacity: 0; stroke-width: 0.4px; }
+}
+.radar-ping-secondary {
+  animation: radarPing2 2.0s infinite cubic-bezier(0, 0.4, 0.8, 1);
+  animation-delay: 0.9s;
+}
+
+/* Buffer storage rotation spinner */
+@keyframes bufferSpin {
+  from { stroke-dashoffset: 0; transform: rotate(0deg); }
+  to { stroke-dashoffset: 40; transform: rotate(360deg); }
+}
+.buffer-spin {
+  transform-origin: center;
+  animation: bufferSpin 6s linear infinite;
+}
+
+/* High visibility packet capsule glow */
+@keyframes capsulePulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px #00f0ff) drop-shadow(0 0 14px rgba(56, 189, 248, 0.6));
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 10px #38bdf8) drop-shadow(0 0 22px rgba(0, 240, 255, 0.9));
+    transform: scale(1.08);
+  }
+}
+.packet-capsule {
+  animation: capsulePulse 1.2s infinite ease-in-out;
+  transform-origin: center;
+}

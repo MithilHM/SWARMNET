@@ -46,6 +46,7 @@ class RunManager:
         seed: Optional[int] = None,
         routing_policy: Optional[str] = None,
         duration: Optional[float] = None,
+        transport_mode: Optional[str] = None,
     ) -> SimulationRun:
         scenario = ScenarioLoader.load_scenario_by_id(scenario_id)
         if not scenario:
@@ -60,7 +61,9 @@ class RunManager:
         if routing_policy is not None:
             scenario_clone.routing.policy = routing_policy
 
-        engine = SimulationEngine(scenario_clone)
+        mode = transport_mode or "in_process"
+        node_url_map = {nid: a.get("url", "") for nid, a in self.registered_agents.items()}
+        engine = SimulationEngine(scenario_clone, transport_mode=mode, node_url_map=node_url_map)
         run_id = f"RUN-{scenario_id[:6]}-{uuid.uuid4().hex[:8]}"
 
         run_inst = RunInstance(run_id, engine, scenario_clone)

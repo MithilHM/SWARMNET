@@ -1,5 +1,8 @@
 """Integration tests for containerized agent endpoints and backend agent coordination."""
 
+import os
+os.environ["TESTING"] = "1"
+
 import pytest
 from starlette.testclient import TestClient
 
