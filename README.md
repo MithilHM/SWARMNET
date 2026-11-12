@@ -1,7 +1,7 @@
 # SWARMNET — Autonomous Delay-Tolerant Satellite Constellation Network
 
-[![Tests](https://img.shields.io/badge/pytest-36%20passed-success)](https://github.com/)
-[![React](https://img.shields.io/badge/Frontend-React%2019%20%7C%20TypeScript%20%7C%20Vite-blue)](https://vitejs.dev/)
+[![Tests](https://img.shields.io/badge/tests-71%20passed-success)](https://github.com/)
+[![React](https://img.shields.io/badge/Frontend-React%2019%20%7C%20TypeScript%20%7C%20Three.js-blue)](https://vitejs.dev/)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI%20%7C%20Uvicorn-green)](https://fastapi.tiangolo.com/)
 [![Docker](https://img.shields.io/badge/Docker-Compose%20v2-2496ED)](https://www.docker.com/)
 [![SDG 9](https://img.shields.io/badge/SDG%209-Industry%2C%20Innovation%20%26%20Infrastructure-orange)](https://sdgs.un.org/goals/goal9)
@@ -23,7 +23,7 @@ SWARMNET solves this with **autonomous, store-carry-forward packet routing**:
 ```text
                              +------------------------+
                              |    Dashboard / UI      |
-                             | (React + Vite + SVG)   |
+                             | (React + Vite + Three) |
                              +-----------+------------+
                                          ^
                                          | REST / WebSocket
@@ -70,11 +70,29 @@ SWARMNET solves this with **autonomous, store-carry-forward packet routing**:
   Enforces per-node byte limits (`buffer_capacity_bytes`) and deterministic priority eviction (`LOW < NORMAL < HIGH`) with auditable drop reasons (`BUFFER_FULL`, `TTL_EXPIRED`, `HOP_LIMIT`).
 * **Link Serialization Queuing:**  
   Simulates physical link capacity and transmission delay ($t_{\text{serialize}} = \frac{\text{size} \times 8}{\text{bandwidth}}$) with FIFO link queues.
-* **Interactive React Dashboard:**  
-  Real-time SVG constellation canvas, dynamic link coloring (active green, degraded yellow, severed dashed red), animated particle flow, radial buffer gauges, packet tracking modal, and routing decision inspector.
+* **Interactive React Workspace:**
+  A field-atlas style application shell with five workspaces: run overview, a schematic Three.js constellation globe, a packet ledger with hop history, a routing decision audit with candidate score breakdowns, and a same-seed policy comparison with JSON/CSV export. Live run telemetry streams over WebSocket while REST stays authoritative for stepping.
 * **Dual Execution Modes:**  
   * **In-Process Mode:** High-speed deterministic execution for simulation and unit testing.
   * **Container Mode:** Multi-container deployment where isolated Docker containers run standalone satellite agents.
+
+---
+
+## Interface
+
+The frontend is a simulation workbench, not a live mission-control feed. Every number, link state, packet position, and routing decision comes from the backend run.
+
+| Workspace | What it answers |
+| --- | --- |
+| **Overview** | Delivery ratio, loss reasons, delay distribution, buffering, topology load, run metadata, recent events, registered agents. |
+| **Constellation** | Schematic 3D globe with satellites, ground anchors, contact links, and packets in flight. Click any node or link for its detail. |
+| **Packets** | Every generated packet, its current holder, status, hop count, age or delivery delay, and full route history. |
+| **Routing** | Per-hop decisions with the candidate scores that produced them, including penalties and the chosen next hop. |
+| **Compare** | Runs baseline and SWARMNET on the same scenario and seed, then reports measured deltas and exports the active run. |
+
+**3D constellation.** The globe is a faceted icosphere with land outlines derived from Natural Earth 1:110m (public domain). Orbital planes, phases, and ground anchors are derived deterministically from the run seed because scenarios carry only abstract coordinates. Motion is illustrative and not to scale; network state is not. Packets move only when the transport layer reports a handoff, and unavailable links are drawn dashed rather than animated. The scene is lazy-loaded, supports reduced motion, falls back to a keyboard-accessible object list when WebGL is unavailable, and never blocks the rest of the workspace.
+
+**Controls.** Initialize a run from the top bar, then run or pause playback, advance by one or five simulated seconds, reset, and choose a playback speed. Keyboard shortcuts: `1` to `5` switch workspaces, `Space` toggles playback, `Right Arrow` advances one second, and `Escape` clears the active inspector.
 
 ---
 
@@ -206,11 +224,18 @@ Across 404 paired runs there were **zero delivery regressions** (SWARMNET never 
 
 ## Automated Test Suite
 
-Run the full pytest suite (43 unit, integration, and scenario tests):
+Run the backend suite (43 unit, integration, and scenario tests):
 
 ```bash
 cd backend
 pytest -v
+```
+
+Run the frontend suite (28 component, formatting, and geography tests):
+
+```bash
+cd frontend
+npm test
 ```
 
 Test coverage includes:
@@ -223,16 +248,18 @@ Test coverage includes:
 * `test_container_transport.py`: Logical link enforcement over network transports.
 * `test_api.py`: FastAPI routes, runs, stepping, topology, and comparison endpoints.
 * `test_scenario_delivery.py`: Full end-to-end multi-hop delivery across scenarios.
+* `frontend/src/**/*.test.tsx`: Workspace rendering, filtering, inspectors, comparison flow, and export links.
+* `frontend/src/**/*.test.ts`: Formatting helpers, link and buffer classification, and globe geography.
 
 ---
 
 ## Documentation Index
 
-* [`PRD.md`](file:///C:/Users/AMOGH/College/SEM5/El/SWARMNET/PRD.md): Complete Product Requirements Document.
-* [`docs/architecture.md`](file:///C:/Users/AMOGH/College/SEM5/El/SWARMNET/docs/architecture.md): System architecture, component responsibilities, and data flows.
-* [`docs/experiment-methodology.md`](file:///C:/Users/AMOGH/College/SEM5/El/SWARMNET/docs/experiment-methodology.md): Formal metric definitions, controlled variables, and scientific assumptions.
-* [`docs/demo-script.md`](file:///C:/Users/AMOGH/College/SEM5/El/SWARMNET/docs/demo-script.md): 5-minute guided presentation walkthrough.
-* [`docs/implementation_checklist.md`](file:///C:/Users/AMOGH/College/SEM5/El/SWARMNET/docs/implementation_checklist.md): Phase-by-phase implementation tracking.
+* [`PRD.md`](PRD.md): Complete Product Requirements Document.
+* [`docs/architecture.md`](docs/architecture.md): System architecture, component responsibilities, and data flows.
+* [`docs/experiment-methodology.md`](docs/experiment-methodology.md): Formal metric definitions, controlled variables, and scientific assumptions.
+* [`docs/demo-script.md`](docs/demo-script.md): 5-minute guided presentation walkthrough.
+* [`docs/implementation_checklist.md`](docs/implementation_checklist.md): Phase-by-phase implementation tracking.
 
 ---
 

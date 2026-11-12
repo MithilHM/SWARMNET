@@ -51,3 +51,4 @@ backend/data/
 .idea/
 .DS_Store
 Thumbs.db
+/implementation.implementation.md

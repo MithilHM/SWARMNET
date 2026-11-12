@@ -29,6 +29,8 @@ export interface GroundStationNode {
   last_contact_time?: number | null;
 }
 
+export type LinkState = "active" | "degraded" | "down";
+
 export interface Link {
   link_id: string;
   source_node_id: string;
@@ -106,15 +108,21 @@ export interface MetricsSummary {
   packets_generated: number;
   packets_delivered: number;
   packets_dropped: number;
+  packets_dropped_by_reason: Record<string, number>;
   packets_expired: number;
+  packets_pending: number;
+  packets_in_transit: number;
   delivery_ratio: number;
   mean_delay_seconds: number;
   median_delay_seconds: number;
   p95_delay_seconds: number;
   mean_hop_count: number;
+  total_bytes_generated: number;
   total_bytes_delivered: number;
+  mean_time_buffered_seconds: number;
+  route_changes_count: number;
   buffer_occupancy_by_node: Record<string, number>;
-  dropped_by_reason: Record<string, number>;
+  link_transferred_bytes: Record<string, number>;
   delivered_delay_records?: number[];
 }
 
@@ -137,6 +145,7 @@ export interface SimulationRun {
   status: RunStatus;
   config_snapshot?: Record<string, unknown>;
   metrics_summary: MetricsSummary;
+  error_message?: string | null;
 }
 
 export interface InTransitPacket {
@@ -166,6 +175,30 @@ export interface ScenarioSummary {
   satellites_count: number;
   ground_stations_count: number;
   links_count: number;
+}
+
+export type TopologyEventType =
+  | "link_up"
+  | "link_down"
+  | "link_degraded"
+  | "link_recovered"
+  | "packet_generated"
+  | "packet_forwarded"
+  | "packet_buffered"
+  | "packet_in_transit"
+  | "packet_delivered"
+  | "packet_dropped"
+  | "packet_expired"
+  | "routing_decision";
+
+export interface TopologyEvent {
+  event_id?: string;
+  simulated_time: number;
+  event_type: TopologyEventType | string;
+  link_id?: string | null;
+  node_id?: string | null;
+  packet_id?: string | null;
+  details?: Record<string, unknown>;
 }
 
 export interface ComparisonResult {
@@ -218,3 +251,41 @@ export interface NodeDetailResponse {
   last_contact_time?: number | null;
   last_state_update?: number;
 }
+
+/** Envelope pushed by `/ws/runs/{run_id}`. */
+export type StreamMessage =
+  | {
+      type: "initial_state";
+      run_id: string;
+      simulated_time: number;
+      status: RunStatus;
+      metrics: MetricsSummary;
+      topology: TopologyData;
+    }
+  | {
+      type: "event";
+      event: TopologyEvent;
+      simulated_time: number;
+      metrics: MetricsSummary;
+    }
+  | {
+      type: "step_result";
+      data: {
+        run_id: string;
+        simulated_time: number;
+        has_ended: boolean;
+        metrics: MetricsSummary;
+      };
+      topology: TopologyData;
+    }
+  | {
+      type: "pause_result" | "resume_result" | "reset_result";
+      data: { run_id: string; status: string; simulated_time: number; metrics: MetricsSummary };
+      topology?: TopologyData;
+    }
+  | { type: "error"; message: string };
+
+export type ViewKey = "overview" | "constellation" | "packets" | "routing" | "experiments";
+
+export type BackendState = "connecting" | "online" | "degraded" | "offline";
+export type StreamState = "idle" | "connecting" | "live" | "unavailable";

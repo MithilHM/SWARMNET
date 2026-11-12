@@ -1,0 +1,106 @@
+/* SWARMNET field-atlas design tokens.
+   Light instrument shell, dark spatial stage for the globe. */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces */
+  --canvas: #f1f2ef;
+  --surface: #ffffff;
+  --surface-sunken: #e7e9e3;
+  --surface-raised: #fbfbf9;
+  --surface-inverse: #101619;
+
+  /* Ink */
+  --ink: #12181a;
+  --ink-secondary: #3d4849;
+  --ink-muted: #5a6564;
+  --ink-inverse: #f4f6f3;
+  --ink-inverse-muted: #9fadaa;
+
+  /* Lines */
+  --line: #d2d6cf;
+  --line-strong: #b3b9b0;
+  --line-inverse: #2a3538;
+
+  /* Brand + signal */
+  --accent: #a63d1e;
+  --accent-hover: #8c3116;
+  --accent-soft: #f6e7e1;
+  --accent-ink: #6d2711;
+
+  --state-active: #0f6f6c;
+  --state-active-soft: #dceceb;
+  --state-degraded: #8a5a00;
+  --state-degraded-soft: #f7edd6;
+  --state-down: #59636d;
+  --state-down-soft: #e4e7e9;
+  --state-critical: #8c1d18;
+  --state-critical-soft: #f7e2e0;
+
+  /* Globe stage (dark, self-contained) */
+  --stage: #0c1316;
+  --stage-deep: #070d10;
+  --stage-panel: #121d21;
+  --stage-line: #24343a;
+  --stage-ink: #e8eeeb;
+  --stage-ink-muted: #93a3a1;
+  --stage-accent: #d98a63;
+  --stage-satellite: #e9efec;
+  --stage-link-active: #6fd3c6;
+  --stage-link-degraded: #d9a13f;
+  --stage-link-down: #4a5a62;
+
+  /* Type */
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-md: 1.0625rem;
+  --text-lg: 1.3125rem;
+  --text-xl: 1.75rem;
+  --text-2xl: 2.375rem;
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+
+  /* Space */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+
+  /* Shape */
+  --radius-1: 2px;
+  --radius-2: 4px;
+  --radius-3: 8px;
+  --radius-pill: 999px;
+
+  /* Elevation */
+  --shadow-raised: 0 1px 2px rgba(18, 24, 26, 0.07), 0 6px 16px -12px rgba(18, 24, 26, 0.28);
+  --shadow-stage: 0 24px 60px -32px rgba(7, 13, 16, 0.75);
+
+  /* Layers */
+  --z-base: 0;
+  --z-sticky: 20;
+  --z-popover: 40;
+  --z-overlay: 60;
+  --z-toast: 80;
+
+  /* Motion */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 1ms;
+    --dur-base: 1ms;
+  }
+}
