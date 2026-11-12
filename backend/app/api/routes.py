@@ -16,6 +16,7 @@ class CreateRunRequest(BaseModel):
     seed: Optional[int] = None
     routing_policy: Optional[str] = None
     duration: Optional[float] = None
+    transport_mode: Optional[str] = None
 
 
 class StepRunRequest(BaseModel):
@@ -67,6 +68,7 @@ def create_run(req: CreateRunRequest):
             seed=req.seed,
             routing_policy=req.routing_policy,
             duration=req.duration,
+            transport_mode=req.transport_mode,
         )
         return run.model_dump()
     except ValueError as e:

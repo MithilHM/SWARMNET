@@ -93,6 +93,37 @@ export const App: React.FC = () => {
     loadInitial();
   }, [refreshAgents]);
 
+  // Real-time WebSocket event subscription
+  useEffect(() => {
+    if (!currentRun?.run_id) return;
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.hostname || "localhost";
+    const wsUrl = `${protocol}//${host}:8000/ws/runs/${currentRun.run_id}`;
+
+    let ws: WebSocket | null = null;
+    try {
+      ws = new WebSocket(wsUrl);
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === "event" || payload.type === "step_result") {
+            if (payload.metrics) setMetrics(payload.metrics);
+            if (payload.topology) setTopology(payload.topology);
+            if (payload.event) setEvents((prev) => [payload.event, ...prev.slice(0, 49)]);
+          }
+        } catch {
+          // ignore parse errors
+        }
+      };
+    } catch {
+      // WebSocket optional fallback to HTTP refresh
+    }
+
+    return () => {
+      if (ws) ws.close();
+    };
+  }, [currentRun?.run_id]);
+
   // Handle run creation
   const handleCreateRun = async () => {
     setIsPlaying(false);
@@ -282,6 +313,9 @@ export const App: React.FC = () => {
         {activeTab === "topology" && (
           <TopologyTab
             topology={topology}
+            decisions={decisions}
+            packets={packets}
+            simulatedTime={currentRun?.current_sim_time ?? topology?.simulated_time ?? 0}
             selectedNode={selectedNode}
             selectedLink={selectedLink}
             onSelectNode={handleSelectNode}

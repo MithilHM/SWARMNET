@@ -11,6 +11,7 @@ Each container runs this server with environment variables:
 import os
 import time
 import threading
+from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -28,11 +29,6 @@ NODE_TYPE = os.environ.get("NODE_TYPE", "satellite")
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000")
 PORT = int(os.environ.get("PORT", "8100"))
 BUFFER_CAPACITY = int(os.environ.get("BUFFER_CAPACITY_BYTES", "1048576"))
-
-agent_app = FastAPI(
-    title=f"SWARMNET Agent — {NODE_ID}",
-    description=f"Containerized {NODE_TYPE} agent for node {NODE_ID}.",
-)
 
 
 class AgentState:
@@ -65,6 +61,61 @@ class AgentState:
 
 
 state = AgentState(NODE_ID, NODE_TYPE, BUFFER_CAPACITY)
+
+
+def _register_with_backend():
+    """Background registration with the central backend."""
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            resp = client.post(
+                f"{BACKEND_URL}/api/agents/register",
+                json={
+                    "node_id": state.node_id,
+                    "node_type": state.node_type,
+                    "url": f"http://{state.node_id.lower().replace('-', '_')}:{PORT}",
+                },
+            )
+            if resp.status_code == 200:
+                state.heartbeat_count += 1
+                state.last_heartbeat_at = time.time()
+    except Exception:
+        pass
+
+
+def _heartbeat_loop(interval: float = 15.0):
+    """Periodically send heartbeat to backend."""
+    while True:
+        time.sleep(interval)
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                client.post(
+                    f"{BACKEND_URL}/api/agents/heartbeat",
+                    json={
+                        "node_id": state.node_id,
+                        "node_type": state.node_type,
+                        "uptime": round(time.time() - state.started_at, 1),
+                        "buffer_used_bytes": state.buffer.used_bytes if state.buffer else 0,
+                    },
+                )
+                state.heartbeat_count += 1
+                state.last_heartbeat_at = time.time()
+        except Exception:
+            pass
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if os.environ.get("TESTING") != "1":
+        threading.Thread(target=_register_with_backend, daemon=True).start()
+        threading.Thread(target=_heartbeat_loop, args=(15.0,), daemon=True).start()
+    yield
+
+
+agent_app = FastAPI(
+    title=f"SWARMNET Agent — {NODE_ID}",
+    description=f"Containerized {NODE_TYPE} agent for node {NODE_ID}.",
+    lifespan=lifespan,
+)
 
 
 class ReceivePacketRequest(BaseModel):
@@ -196,53 +247,6 @@ def get_events():
 def reset_agent():
     state.reset()
     return {"status": "reset", "node_id": state.node_id}
-
-
-def _register_with_backend():
-    """Background registration with the central backend."""
-    try:
-        with httpx.Client(timeout=5.0) as client:
-            resp = client.post(
-                f"{BACKEND_URL}/api/agents/register",
-                json={
-                    "node_id": state.node_id,
-                    "node_type": state.node_type,
-                    "url": f"http://{state.node_id.lower().replace('-', '_')}:{PORT}",
-                },
-            )
-            if resp.status_code == 200:
-                state.heartbeat_count += 1
-                state.last_heartbeat_at = time.time()
-    except Exception:
-        pass
-
-
-def _heartbeat_loop(interval: float = 15.0):
-    """Periodically send heartbeat to backend."""
-    while True:
-        time.sleep(interval)
-        try:
-            with httpx.Client(timeout=5.0) as client:
-                client.post(
-                    f"{BACKEND_URL}/api/agents/heartbeat",
-                    json={
-                        "node_id": state.node_id,
-                        "node_type": state.node_type,
-                        "uptime": round(time.time() - state.started_at, 1),
-                        "buffer_used_bytes": state.buffer.used_bytes if state.buffer else 0,
-                    },
-                )
-                state.heartbeat_count += 1
-                state.last_heartbeat_at = time.time()
-        except Exception:
-            pass
-
-
-@agent_app.on_event("startup")
-async def on_startup():
-    # Register once, then start heartbeat thread
-    threading.Thread(target=_register_with_backend, daemon=True).start()
-    threading.Thread(target=_heartbeat_loop, args=(15.0,), daemon=True).start()
 
 
 if __name__ == "__main__":
