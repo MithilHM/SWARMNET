@@ -169,6 +169,35 @@ def test_buffer_expiry_check():
     assert buffer.used_bytes == 0
 
 
+def test_buffer_restore_after_failed_handoff_bypasses_dedup():
+    """A failed transfer restores the sender's owned copy without duplicate rejection."""
+    buffer = NodeBuffer(node_id="SAT-01", capacity_bytes=10000)
+    pkt = Packet(
+        packet_id="pkt-retry",
+        source_node_id="SAT-01",
+        destination_node_id="GROUND-01",
+        created_at=0.0,
+        payload_size_bytes=1000,
+        current_node_id="SAT-01",
+    )
+    admitted, _, _ = buffer.admit(pkt, current_time=0.0)
+    assert admitted is True
+
+    removed = buffer.remove("pkt-retry")
+    assert removed is not None
+    assert buffer.used_bytes == 0
+
+    # Same packet id re-enters the node after a failed handoff.
+    restored, reason, evicted = buffer.restore(removed, current_time=1.0)
+    assert restored is True
+    assert reason is None
+    assert evicted == []
+    assert buffer.used_bytes == 1000
+    assert buffer.packet_count == 1
+    assert removed.status == PacketStatus.BUFFERED
+    assert removed.drop_reason is None
+
+
 def test_buffer_hop_limit():
     buffer = NodeBuffer(node_id="SAT-01", capacity_bytes=10000)
 

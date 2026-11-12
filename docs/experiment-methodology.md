@@ -27,9 +27,12 @@ Every experiment runs a fair, head-to-head comparison between two routing strate
 ### 2.2 SWARMNET Policy: Autonomous Contact-Aware Routing (`swarmnet`)
 * **Algorithm:** Autonomous local heuristic evaluation over all reachable candidate neighbors using a multi-factor objective function:
   $$\text{Score} = w_{\text{prog}} \cdot P + w_{\text{rel}} \cdot R + w_{\text{cont}} \cdot C - w_{\text{lat}} \cdot \hat{L} - w_{\text{cong}} \cdot \hat{Q} - w_{\text{eng}} \cdot E$$
-* **Contact Feasibility Filtering:** Automatically rejects links whose contact end time occurs before transmission can complete ($t_{\text{transfer}} > t_{\text{end}} - t_{\text{current}}$).
-* **Progress Assessment:** Rewards candidates moving closer to the destination geometrically or topologically, provided downstream connectivity exists.
-* **Explainability:** Records every candidate neighbor's score components and outputs a human-readable justification for every forwarding or buffering decision.
+* **Future-Contact Path Estimation:** A deterministic earliest-arrival search considers the currently active link state together with every scheduled contact window in the scenario. Intermediate nodes act on simulation ticks, so arrival times are aligned to the next decision tick before the downstream search continues. This rejects candidates whose only onward contact closes before the receiver can use it.
+* **Reference-Route Progress:** The policy first computes the earliest arrival achievable by staying at the current node. A candidate's progress score compares its predicted end-to-end arrival with that reference; candidates that arrive later than waiting are buffered rather than rewarded for geometric proximity. Grossly late candidates are used only when the local buffer is under pressure.
+* **Contact Feasibility Filtering:** Rejects links whose contact end time occurs before transmission can complete ($t_{\text{transfer}} > t_{\text{end}} - t_{\text{current}}$) and scores the remaining margin over twice the serialization time.
+* **Buffer-Aware Backpressure:** If a candidate buffer is full and its predicted route needs a contact window that has not opened yet, the packet stays at the current node while that buffer has room. This prevents the receiver from admitting the packet only to evict an older stored packet before its next drain.
+* **Reliable Handoffs:** A failed transport handoff restores the sender's owned copy through `NodeBuffer.restore()`, bypassing duplicate suppression. Re-admitting the same packet would mark it `DUPLICATE` and lose it silently.
+* **Explainability:** Records every candidate neighbor's score components, predicted path, arrival time, and rejection reason, and outputs a human-readable justification for every forwarding or buffering decision.
 
 ---
 
@@ -85,7 +88,22 @@ SWARMNET is an educational and research simulation prototype. The following limi
 
 ---
 
-## 6. How to Reproduce Experiments
+## 6. Robustness Results
+
+The bundled scenarios were compared for every seed from `0` through `100` (404 paired runs total). SWARMNET delivered at least as many packets as the baseline in every run:
+
+| Scenario | SWARMNET ahead | Tied | SWARMNET behind |
+|---|---:|---:|---:|
+| `basic_delivery` | 0 | 101 | 0 |
+| `intermittent_contact` | 0 | 101 | 0 |
+| `route_disruption` | 97 | 4 | 0 |
+| `buffer_pressure` | 3 | 98 | 0 |
+
+An additional synthetic stress workload used 10, 30, 60, and 100 satellites, 64 KB buffers, 2 packets/second, and a ground blackout from 40–60 seconds. Across 40 paired runs, SWARMNET had zero delivery regressions and exceeded baseline delivery in every run. These are observed simulation results, not a guarantee for arbitrary topologies or seeds.
+
+---
+
+## 7. How to Reproduce Experiments
 
 ### Running via CLI
 To execute the complete benchmark suite across all scenarios and generate JSON/CSV reports:

@@ -1,20 +1,33 @@
-"""Interpretable multi-factor scoring functions for SWARMNET contact-aware routing."""
+"""Interpretable multi-factor scoring functions for SWARMNET contact-aware routing.
 
-import math
+The score is deliberately bounded and easy to inspect:
+
+    score = w_progress   * progress
+          + w_reliability * path_reliability
+          + w_contact     * contact_feasibility
+          - w_latency     * normalized_path_latency
+          - w_congestion  * candidate_queue_pressure
+          - w_energy      * candidate_energy_penalty
+
+All components are normalised to [0, 1] so a change in one weight has a
+predictable effect.  ``progress`` compares the candidate's predicted delivery
+delay with the earliest arrival the current node could achieve on its own,
+including any wait for future scheduled contacts.  Routing toward a
+geometrically closer satellite that cannot reach the destination, or that can
+only do so much later than simply waiting, is therefore not rewarded.
+"""
+
 from typing import Optional, Tuple
+
 from app.models.scenario import RoutingWeights
 from app.models.link import Link
-from app.models.node import SatelliteNode, GroundStationNode, NodePosition
 from app.models.decision import CandidateScore
 from app.simulation.topology import TopologyManager
+from app.routing.path_estimator import RouteEstimate
 
 
-def _get_node_pos(topology: TopologyManager, node_id: str) -> Optional[NodePosition]:
-    if node_id in topology.satellites:
-        return topology.satellites[node_id].position
-    if node_id in topology.ground_stations:
-        return topology.ground_stations[node_id].position
-    return None
+def _clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
+    return max(lower, min(upper, value))
 
 
 def compute_candidate_score(
@@ -26,121 +39,134 @@ def compute_candidate_score(
     current_time: float,
     topology: TopologyManager,
     weights: RoutingWeights,
+    route: RouteEstimate,
+    candidate_arrival_time: float,
+    reference_route: Optional[RouteEstimate] = None,
+    max_path_latency_ms: Optional[float] = None,
+    reserved_candidate_bytes: int = 0,
 ) -> Tuple[float, CandidateScore]:
+    """Score one contact-feasible candidate next hop.
+
+    ``route`` is the future-contact-aware route from the candidate to the
+    destination (empty for direct delivery).  ``candidate_arrival_time`` is the
+    absolute time at which the packet would reach the destination through this
+    candidate, including the first hop and any tick-aligned waiting.  The
+    ``reference_route`` is the best route the packet could achieve by staying at
+    the current node, used as the progress baseline.
     """
-    Compute multi-factor score for a candidate neighbor:
-    score = w_prog * progress + w_rel * reliability + w_cont * contact_feasibility
-            - w_lat * norm_latency - w_cong * norm_congestion - w_eng * energy_penalty
-    """
-    # 1. Transfer duration calculation
+
     transfer_duration = link.transfer_time_seconds(payload_size_bytes)
-    arrival_time = current_time + transfer_duration
-
-    # 2. Contact feasibility
-    contact_score = 1.0
-    rem_contact_sec = None
     if link.contact_end_time is not None:
-        rem_contact_sec = max(0.0, link.contact_end_time - current_time)
-        if arrival_time > link.contact_end_time:
-            # Transfer cannot complete before contact window closes!
-            contact_score = -1.0
-        else:
-            # Scale feasibility based on margin beyond bare minimum transfer time
-            margin_ratio = rem_contact_sec / max(0.001, (transfer_duration * 2.0))
-            contact_score = min(1.0, max(0.1, margin_ratio))
-
-    # If contact is impossible, return negative score
-    if contact_score < 0:
-        cs = CandidateScore(
-            neighbor_id=candidate_node_id,
-            total_score=-999.0,
-            contact_score=0.0,
-            link_available=False,
-            estimated_remaining_contact_sec=rem_contact_sec,
-            reason="Contact window ends before packet transfer can complete",
+        remaining_contact_sec: Optional[float] = max(
+            0.0, link.contact_end_time - current_time
         )
-        return -999.0, cs
+    else:
+        remaining_contact_sec = None
 
-    # 3. Progress toward destination
+    # --- 1. Progress: compare predicted delivery delay with staying put.
+    # The reference route is the earliest-arrival option from the current node,
+    # so a candidate can never be meaningfully earlier.  Candidates that arrive
+    # later than the reference receive a smaller progress score.
+    candidate_delay = max(1e-6, candidate_arrival_time - current_time)
+    if reference_route is not None:
+        reference_delay = max(1e-6, reference_route.arrival_time - current_time)
+    else:
+        reference_delay = candidate_delay
+    progress_score = _clamp(reference_delay / candidate_delay)
     if candidate_node_id == destination_id:
         progress_score = 1.0
-    else:
-        # Check if candidate has direct active link to destination or path
-        candidate_to_dest = topology.get_link_between(
-            candidate_node_id, destination_id, active_only=True
-        )
-        if candidate_to_dest and candidate_to_dest.is_available:
-            progress_score = 0.8
-        else:
-            # Estimate progress based on position and active neighbor reachability
-            cand_links = topology.get_outgoing_links(candidate_node_id, active_only=True)
-            if any(l.target_node_id == destination_id for l in cand_links):
-                progress_score = 0.7
-            elif len(cand_links) > 1:
-                # Geometric refinement when downstream links exist
-                curr_pos = _get_node_pos(topology, current_node_id)
-                cand_pos = _get_node_pos(topology, candidate_node_id)
-                dest_pos = _get_node_pos(topology, destination_id)
-                if curr_pos and cand_pos and dest_pos:
-                    dist_curr = math.sqrt((curr_pos.x - dest_pos.x) ** 2 + (curr_pos.y - dest_pos.y) ** 2)
-                    dist_cand = math.sqrt((cand_pos.x - dest_pos.x) ** 2 + (cand_pos.y - dest_pos.y) ** 2)
-                    progress_score = 0.55 if dist_cand < dist_curr else 0.45
-                else:
-                    progress_score = 0.5
-            elif len(cand_links) == 1:
-                progress_score = 0.3
-            else:
-                progress_score = 0.1
 
-    # 4. Reliability
-    reliability_score = max(0.0, min(1.0, link.reliability))
+    # --- 2. End-to-end reliability of the candidate's route.
+    path_reliability = _clamp(link.reliability * route.reliability)
 
-    # 5. Normalized latency penalty (0.0 to 1.0, 200ms baseline scale)
-    norm_latency = min(1.0, link.latency_ms / 200.0)
+    # --- 3. Contact feasibility.  The path estimator already removed links
+    # that cannot finish serialising this packet; this component additionally
+    # rewards a healthy margin over the minimum required window on both the
+    # first hop and the downstream route.
+    contact_score = route.min_contact_margin_ratio
+    if link.contact_end_time is not None:
+        first_hop_margin = max(
+            0.0, link.contact_end_time - current_time
+        ) / max(0.001, transfer_duration * 2.0)
+        contact_score = min(contact_score, first_hop_margin)
+    contact_score = _clamp(contact_score, 0.1, 1.0)
 
-    # 6. Congestion penalty
+    # --- 4. Normalised propagation latency penalty.  Waiting time is already
+    # reflected in progress; this term keeps the preference for lower-latency
+    # links among routes that arrive at similar times.
+    total_path_latency_ms = link.latency_ms + route.total_latency_ms
+    total_path_hops = 1 + route.hop_count
+    latency_scale = max(
+        200.0,
+        max_path_latency_ms
+        if max_path_latency_ms is not None
+        else total_path_latency_ms,
+    )
+    norm_latency = _clamp(total_path_latency_ms / latency_scale)
+
+    # --- 5. Queue pressure at the candidate after accepting this packet
+    # (bounded 0..1).  Reservations made earlier in the same tick are included
+    # because topology buffer counters only synchronise at the end of a tick.
     congestion_penalty = 0.0
-    cand_sat = topology.satellites.get(candidate_node_id)
-    if cand_sat and cand_sat.buffer_capacity_bytes > 0:
-        congestion_penalty = cand_sat.buffer_used_bytes / cand_sat.buffer_capacity_bytes
-        congestion_penalty = min(1.0, max(0.0, congestion_penalty))
+    candidate_satellite = topology.satellites.get(candidate_node_id)
+    if (
+        candidate_satellite is not None
+        and candidate_satellite.buffer_capacity_bytes > 0
+    ):
+        projected_bytes = (
+            candidate_satellite.buffer_used_bytes
+            + reserved_candidate_bytes
+            + payload_size_bytes
+        )
+        congestion_penalty = _clamp(
+            projected_bytes / candidate_satellite.buffer_capacity_bytes
+        )
 
-    # 7. Energy penalty
-    # Penalize candidate if it is a satellite with low energy to avoid exhausting critical nodes
+    # --- 6. Energy penalty at the candidate (or current node if the candidate
+    # is a ground station without an energy model).
     energy_penalty = 0.0
-    cand_sat = topology.satellites.get(candidate_node_id)
-    curr_sat = topology.satellites.get(current_node_id)
-    if cand_sat:
-        energy_penalty = 1.0 - (cand_sat.energy_percent / 100.0)
-    elif curr_sat:
-        energy_penalty = 1.0 - (curr_sat.energy_percent / 100.0)
-    energy_penalty = min(1.0, max(0.0, energy_penalty))
+    current_satellite = topology.satellites.get(current_node_id)
+    if candidate_satellite is not None:
+        energy_penalty = 1.0 - (candidate_satellite.energy_percent / 100.0)
+    elif current_satellite is not None:
+        energy_penalty = 1.0 - (current_satellite.energy_percent / 100.0)
+    energy_penalty = _clamp(energy_penalty)
 
-    # Multi-factor score
     total_score = (
         weights.progress * progress_score
-        + weights.reliability * reliability_score
+        + weights.reliability * path_reliability
         + weights.contact_feasibility * contact_score
         - weights.latency * norm_latency
         - weights.congestion * congestion_penalty
         - weights.energy * energy_penalty
     )
 
-    candidate_score_obj = CandidateScore(
+    cs = CandidateScore(
         neighbor_id=candidate_node_id,
         total_score=round(total_score, 4),
         progress_score=round(progress_score, 4),
-        reliability_score=round(reliability_score, 4),
+        reliability_score=round(path_reliability, 4),
         contact_score=round(contact_score, 4),
         latency_penalty=round(norm_latency, 4),
         congestion_penalty=round(congestion_penalty, 4),
         energy_penalty=round(energy_penalty, 4),
         link_available=link.is_available,
-        estimated_remaining_contact_sec=rem_contact_sec,
+        estimated_remaining_contact_sec=(
+            round(remaining_contact_sec, 4)
+            if remaining_contact_sec is not None
+            else None
+        ),
+        route_path=route.path,
+        estimated_path_latency_ms=round(total_path_latency_ms, 4),
+        estimated_path_hops=total_path_hops,
+        path_reliability=round(path_reliability, 4),
         reason=(
-            f"progress={progress_score:.2f}, rel={reliability_score:.2f}, "
-            f"contact={contact_score:.2f}, lat_pen={norm_latency:.2f}"
+            f"route={' -> '.join(route.path)}; "
+            f"arrival={candidate_arrival_time:.2f}s, "
+            f"wait={route.waiting_seconds:.2f}s; "
+            f"progress={progress_score:.2f}, rel={path_reliability:.2f}, "
+            f"contact={contact_score:.2f}, latency={total_path_latency_ms:.1f}ms"
         ),
     )
 
-    return total_score, candidate_score_obj
+    return total_score, cs

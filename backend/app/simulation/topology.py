@@ -1,8 +1,9 @@
 """Topology manager for nodes and dynamic links."""
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
+
 from app.models.node import SatelliteNode, GroundStationNode, NodeStatus
-from app.models.link import Link
+from app.models.link import Link, LinkScheduleItem
 
 
 class TopologyManager:
@@ -11,6 +12,9 @@ class TopologyManager:
         self.ground_stations: Dict[str, GroundStationNode] = {}
         # Keyed by link_id
         self.links: Dict[str, Link] = {}
+        # Contact plan per link: sorted (start, end) windows when the link is
+        # scheduled to be available.  Used for future-contact route estimates.
+        self._link_windows: Dict[str, List[Tuple[float, float]]] = {}
         # Adjacency index: source_id -> list of link_ids
         self._out_links: Dict[str, List[str]] = {}
 
@@ -31,6 +35,44 @@ class TopologyManager:
         if link.link_id not in self._out_links[link.source_node_id]:
             self._out_links[link.source_node_id].append(link.link_id)
         self._update_node_neighbors(link.source_node_id)
+
+    def set_link_windows(
+        self, link_id: str, schedule: List[LinkScheduleItem]
+    ) -> None:
+        """Register the contact plan for a link.
+
+        Only available windows are stored; gaps between them represent periods
+        when the link is unavailable.  An empty schedule means the link has no
+        planned outage and is treated as always available.
+        """
+        if not schedule:
+            windows: List[Tuple[float, float]] = [(0.0, float("inf"))]
+        else:
+            windows = [
+                (item.start, item.end) for item in schedule if item.available
+            ]
+        windows.sort(key=lambda window: window[0])
+        self._link_windows[link_id] = windows
+
+    def get_link_windows(self, link_id: str) -> List[Tuple[float, float]]:
+        if link_id in self._link_windows:
+            return self._link_windows[link_id]
+        link = self.links.get(link_id)
+        if link is None:
+            return []
+        if not link.is_available:
+            return []
+        return [
+            (
+                0.0,
+                link.contact_end_time
+                if link.contact_end_time is not None
+                else float("inf"),
+            )
+        ]
+
+    def is_node_active(self, node_id: str) -> bool:
+        return self._is_target_active(node_id)
 
     def get_node_type(self, node_id: str) -> Optional[str]:
         if node_id in self.satellites:

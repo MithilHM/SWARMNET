@@ -60,11 +60,13 @@ def test_route_disruption_swarmnet():
     while not engine.clock.has_ended():
         engine.step(1)
 
-    # Deliveries must occur and packets must survive the disruptions
+    # Deliveries must occur and every generated packet must be accounted for.
     assert engine.metrics.packets_generated > 0
     assert engine.metrics.packets_delivered > 0
-    assert engine.metrics.delivery_ratio >= 0.8
-    assert engine.metrics.packets_pending > 0
+    assert engine.metrics.delivery_ratio == 1.0
+    assert engine.metrics.packets_delivered == engine.metrics.packets_generated
+    assert engine.metrics.packets_pending == 0
+    assert engine.metrics.packets_dropped == 0
     # Decisions must include BEST_SCORE
     swarmnet_decisions = [
         d for d in engine.all_decisions if d.routing_policy == "swarmnet"

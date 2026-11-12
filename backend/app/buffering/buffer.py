@@ -107,6 +107,63 @@ class NodeBuffer:
 
         return True, None, evicted
 
+    def restore(self, packet: Packet, current_time: float) -> Tuple[bool, Optional[str], List[Packet]]:
+        """Return a packet to the buffer after a failed handoff.
+
+        Transfer semantics are at-least-once: the sender removes its copy when
+        transmission is scheduled, and restores that copy if the transport
+        reports a failed handoff.  Restoring must bypass duplicate suppression
+        because this is the same owned packet, not a duplicate copy arriving
+        from another node.
+        """
+        if packet.packet_id in self._packets:
+            # Already owned here; nothing to do and no byte double-counting.
+            return True, None, []
+
+        if packet.is_expired(current_time):
+            packet.status = PacketStatus.EXPIRED
+            packet.drop_reason = DropReason.TTL_EXPIRED.value
+            return False, DropReason.TTL_EXPIRED.value, []
+
+        evicted: List[Packet] = []
+        needed_bytes = (self.used_bytes + packet.payload_size_bytes) - self.capacity_bytes
+        if needed_bytes > 0:
+            candidates = sorted(
+                self._packets.values(),
+                key=lambda p: (
+                    PRIORITY_WEIGHT[p.priority],
+                    p.expires_at if p.expires_at is not None else float("inf"),
+                ),
+            )
+            incoming_weight = PRIORITY_WEIGHT[packet.priority]
+            freed_bytes = 0
+            to_evict_ids: List[str] = []
+            for cand in candidates:
+                if PRIORITY_WEIGHT[cand.priority] > incoming_weight:
+                    break
+                to_evict_ids.append(cand.packet_id)
+                freed_bytes += cand.payload_size_bytes
+                if freed_bytes >= needed_bytes:
+                    break
+
+            if freed_bytes < needed_bytes:
+                packet.status = PacketStatus.DROPPED
+                packet.drop_reason = DropReason.BUFFER_FULL.value
+                return False, DropReason.BUFFER_FULL.value, []
+
+            for pid in to_evict_ids:
+                evicted_pkt = self.remove(pid)
+                if evicted_pkt:
+                    evicted_pkt.status = PacketStatus.DROPPED
+                    evicted_pkt.drop_reason = DropReason.BUFFER_FULL.value
+                    evicted.append(evicted_pkt)
+
+        self._packets[packet.packet_id] = packet
+        self.used_bytes += packet.payload_size_bytes
+        packet.status = PacketStatus.BUFFERED
+        packet.current_node_id = self.node_id
+        return True, None, evicted
+
     def remove(self, packet_id: str) -> Optional[Packet]:
         """Remove packet from buffer and update used bytes."""
         if packet_id in self._packets:

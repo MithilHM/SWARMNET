@@ -80,8 +80,12 @@ class SatelliteAgent:
                                 cost = round(0.35 * (removed.payload_size_bytes / 1024.0), 2)
                                 topo_sat.energy_percent = max(0.0, round(topo_sat.energy_percent - cost, 2))
                         else:
-                            # Re-admit into buffer if transfer couldn't be scheduled
-                            self.buffer.admit(removed, current_time)
+                            # The transport refused to schedule the handoff
+                            # (contact closed or link queue full).  Restore the
+                            # owned copy without duplicate suppression; a
+                            # re-admit would mark the packet DUPLICATE and drop
+                            # it silently.
+                            self.buffer.restore(removed, current_time)
                 else:
                     # Link unavailable or changed before dispatch, retain in buffer
                     pass

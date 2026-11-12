@@ -65,7 +65,9 @@ class SimulationEngine:
 
     def _init_network(self) -> None:
         # Initialize satellite agents
-        policy = get_routing_policy(self.scenario.routing)
+        policy = get_routing_policy(
+            self.scenario.routing, tick_seconds=self.scenario.scenario.tick_seconds
+        )
         for sat_conf in self.scenario.network.satellites:
             sat = SatelliteNode(
                 satellite_id=sat_conf.id,
@@ -117,6 +119,7 @@ class SimulationEngine:
                 last_updated_at=0.0,
             )
             self.topology.add_link(forward_link)
+            self.topology.set_link_windows(forward_link.link_id, link_conf.schedule)
             self.event_scheduler.schedule_from_link_schedules(
                 forward_link.link_id, link_conf.schedule
             )
@@ -135,6 +138,7 @@ class SimulationEngine:
                     last_updated_at=0.0,
                 )
                 self.topology.add_link(rev_link)
+                self.topology.set_link_windows(rev_id, link_conf.schedule)
                 self.event_scheduler.schedule_from_link_schedules(
                     rev_id, link_conf.schedule
                 )
@@ -191,9 +195,31 @@ class SimulationEngine:
                     for ev_pkt in evicted:
                         self._record_drop(ev_pkt, DropReason.BUFFER_FULL.value, target_id, current_time)
             else:
-                # Re-admit into source satellite buffer for retry
-                if target_id in self.satellite_agents:
-                    self.satellite_agents[target_id].buffer.admit(packet, current_time)
+                # Failed handoff: the transport reports the original source node.
+                # Restore the sender's copy without triggering duplicate
+                # suppression; at-least-once semantics require that a failed
+                # transfer never silently loses the packet.
+                source_node_id = target_id
+                if source_node_id in self.satellite_agents:
+                    restored, reason, evicted = self.satellite_agents[
+                        source_node_id
+                    ].buffer.restore(packet, current_time)
+                    if not restored:
+                        if reason == DropReason.TTL_EXPIRED.value:
+                            self.metrics.packets_expired += 1
+                        self._record_drop(
+                            packet,
+                            reason or DropReason.LINK_FAILURE.value,
+                            source_node_id,
+                            current_time,
+                        )
+                    for ev_pkt in evicted:
+                        self._record_drop(
+                            ev_pkt,
+                            DropReason.BUFFER_FULL.value,
+                            source_node_id,
+                            current_time,
+                        )
 
         # 3. Expire packets in satellite buffers
         for sat_id, agent in self.satellite_agents.items():
@@ -201,6 +227,12 @@ class SimulationEngine:
             for exp_pkt in expired:
                 self.metrics.packets_expired += 1
                 self._record_drop(exp_pkt, DropReason.TTL_EXPIRED.value, sat_id, current_time)
+
+        # Publish buffer occupancy after arrivals and expiry so routing
+        # decisions made later in this same tick see the true downstream load.
+        # Waiting until the end of the tick let several packets pile into an
+        # already-full neighbour before its counter was updated.
+        self._sync_buffer_state()
 
         # 4. Generate new traffic
         new_packets = self.traffic_generator.generate_packets_for_tick(current_time)
@@ -238,6 +270,10 @@ class SimulationEngine:
                 for ev_pkt in evicted:
                     self._record_drop(ev_pkt, DropReason.BUFFER_FULL.value, pkt.source_node_id, current_time)
 
+        # Publish source-buffer admissions before routing so a burst generated
+        # in this tick is visible to candidate congestion checks.
+        self._sync_buffer_state()
+
         # 5. Autonomous forwarding decisions
         for sat_id, agent in self.satellite_agents.items():
             decisions = agent.evaluate_and_dispatch(self.topology, self.transport, current_time)
@@ -259,12 +295,17 @@ class SimulationEngine:
                     )
 
         # 6. Synchronize satellite buffer state with topology nodes
-        for sat_id, agent in self.satellite_agents.items():
-            if sat_id in self.topology.satellites:
-                self.topology.satellites[sat_id].buffer_used_bytes = agent.buffer.used_bytes
+        self._sync_buffer_state()
 
         # 7. Update metrics summary
         self._update_metrics_summary()
+
+    def _sync_buffer_state(self) -> None:
+        for sat_id, agent in self.satellite_agents.items():
+            if sat_id in self.topology.satellites:
+                self.topology.satellites[sat_id].buffer_used_bytes = (
+                    agent.buffer.used_bytes
+                )
 
     def _record_drop(self, packet: Packet, reason: str, node_id: str, current_time: float) -> None:
         self.metrics.packets_dropped += 1

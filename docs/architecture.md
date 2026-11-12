@@ -43,7 +43,7 @@ The platform demonstrates how satellite nodes can independently buffer, forward,
 
 ### 2.1 Simulation Engine (`backend/app/simulation/`)
 - **Clock (`clock.py`):** Maintains discrete simulated time ticks, independent of wall-clock time. Supports pause, resume, step, and reset.
-- **Topology Manager (`topology.py`):** Holds the ground-truth state of nodes (satellites and ground stations) and directed links. Links have dynamic attributes: availability, latency (ms), bandwidth (Mbps), reliability (0.0-1.0), and scheduled contact end time.
+- **Topology Manager (`topology.py`):** Holds the ground-truth state of nodes (satellites and ground stations) and directed links. Links have dynamic attributes: availability, latency (ms), bandwidth (Mbps), reliability (0.0-1.0), and scheduled contact end time. It also stores each link's contact plan as sorted available windows, which the routing layer uses to estimate future connectivity.
 - **Event Scheduler (`events.py`):** Applies deterministic scheduled events (link-up, link-down, link-degradation, recovery) at specific simulation timestamps.
 - **Scenario Loader (`scenarios.py`):** Validates and loads YAML scenario specifications including nodes, links, traffic streams, and event schedules.
 
@@ -57,8 +57,12 @@ The platform demonstrates how satellite nodes can independently buffer, forward,
 - **Baseline Policy (`shortest_path.py`):** Shortest available path using Dijkstra based on latency over currently active links. Buffers if no currently connected route exists.
 - **SWARMNET Policy (`swarmnet.py`, `scoring.py`):** Autonomous contact-aware heuristic scoring evaluated locally over candidate neighbors:
   $$\text{Score} = w_{\text{prog}} \cdot \text{Progress} + w_{\text{rel}} \cdot \text{Reliability} + w_{\text{cont}} \cdot \text{ContactFeasibility} - w_{\text{lat}} \cdot \hat{L} - w_{\text{cong}} \cdot \hat{Q} - w_{\text{eng}} \cdot E$$
-  - Filters out unviable neighbors (backtracking, loop hazards, contact duration shorter than serialization + latency).
-  - Selects highest positive score or buffers if no neighbor provides progress/feasibility.
+  - **Future-contact path estimation (`path_estimator.py`):** Deterministic earliest-arrival Dijkstra over currently active links plus scheduled future contact windows. Intermediate nodes are assumed to act on the next simulation tick, so a contact that closes between arrival and the receiver's decision is not treated as usable.
+  - **Reference-route comparison:** The packet's earliest possible arrival from its current node is computed first. A candidate that cannot reach the destination is rejected as a dead end; one that arrives materially later is retained only to relieve local buffer pressure.
+  - **Score components:** Progress compares the candidate's predicted delivery time with the reference route; reliability is the product of link reliabilities along the predicted path; contact feasibility uses the tightest remaining window margin; latency and congestion are normalized path costs.
+  - **Buffer-aware backpressure:** If a candidate's buffer is full and its onward route needs a contact window that has not opened yet, the packet is kept locally while the current buffer has room. This avoids evicting a stored packet at the receiver, whose admissions are processed before it drains.
+  - **Explainability:** Every candidate's score components, predicted path, arrival time, and rejection reason are recorded in the decision.
+- **Failed-handoff recovery:** The transport reports a refused handoff to the sender. The sender restores its owned packet with `NodeBuffer.restore()` rather than re-admitting it, because re-admission would trigger duplicate suppression and silently lose the packet.
 
 ### 2.4 Transport Layer (`backend/app/transport/`)
 - **LinkTransport Interface (`base.py`):** Decouples forwarding decision from physical/network transfer.

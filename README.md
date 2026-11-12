@@ -56,10 +56,14 @@ SWARMNET solves this with **autonomous, store-carry-forward packet routing**:
 ## Key Features
 
 * **Autonomous Multi-Factor Routing (`swarmnet`):**  
-  Forwarding decisions evaluate route progress, link reliability, contact window feasibility, normalized propagation latency, queue congestion, and battery levels:
+  Forwarding decisions evaluate predicted delivery progress, path reliability, contact window feasibility, normalized propagation latency, queue congestion, and battery levels:
   $$\text{Score} = w_{\text{prog}} \cdot P + w_{\text{rel}} \cdot R + w_{\text{cont}} \cdot C - w_{\text{lat}} \cdot \hat{L} - w_{\text{cong}} \cdot \hat{Q} - w_{\text{eng}} \cdot E$$
+* **Future-Contact Path Estimation:**
+  A deterministic earliest-arrival search runs over active links and scheduled future contact windows, including tick-aligned forwarding at intermediate nodes. Candidates that lead into a dead-end partition, or that would arrive later than waiting at the current node, are rejected or used only to relieve local buffer pressure.
 * **Contact Window Feasibility Check:**  
-  Automatically rejects links that will sever before packet transmission can complete ($t_{\text{transfer}} > t_{\text{end}} - t_{\text{current}}$), preventing failed handoffs.
+  Automatically rejects links that will sever before packet transmission can complete ($t_{\text{transfer}} > t_{\text{end}} - t_{\text{current}}$), preventing failed handoffs. Failed transport handoffs restore the sender's buffered copy without duplicate suppression.
+* **Buffer-Aware Backpressure:**
+  A full relay whose onward contact has not opened yet is skipped while the current node still has room, avoiding eviction of a stored packet. Transit and buffer counters are published mid-tick so decisions see current load.
 * **Deterministic Baseline Router (`baseline`):**  
   Implements shortest-available-path Dijkstra routing over active links based on latency, enabling controlled head-to-head benchmarking.
 * **Capacity-Bounded Storage & Eviction:**  
@@ -168,15 +172,15 @@ intermittent_contact   | Delivery Ratio     |      100.0% |      100.0% |       
                        | Mean Latency       |      23.50s  |      22.50s  |       -1.00s
                        | Dropped Packets    |            0 |            0 |           +0
 --------------------------------------------------------------------------------------
-route_disruption       | Delivery Ratio     |       93.3% |       80.0% |       -13.3%
-                       | Delivered / Gen    |        14/15 |        12/15 |           -2
+route_disruption       | Delivery Ratio     |       93.3% |      100.0% |        +6.7%
+                       | Delivered / Gen    |        14/15 |        15/15 |           +1
                        | Mean Latency       |       7.29s  |       7.00s  |       -0.29s
                        | Dropped Packets    |            0 |            0 |           +0
 --------------------------------------------------------------------------------------
-buffer_pressure        | Delivery Ratio     |       96.7% |       86.7% |       -10.0%
-                       | Delivered / Gen    |        29/30 |        26/30 |           -3
-                       | Mean Latency       |       4.55s  |       3.00s  |       -1.55s
-                       | Dropped Packets    |            0 |            2 |           +2
+buffer_pressure        | Delivery Ratio     |      100.0% |      100.0% |        +0.0%
+                       | Delivered / Gen    |        30/30 |        30/30 |           +0
+                       | Mean Latency       |       5.03s  |       5.00s  |       -0.03s
+                       | Dropped Packets    |            0 |            0 |           +0
 --------------------------------------------------------------------------------------
 ======================================================================================
 ```
@@ -185,11 +189,24 @@ Results are automatically exported to:
 * `data/experiments/latest_benchmark.json`
 * `data/experiments/latest_benchmark.csv`
 
+### Seed Robustness Sweep (Seeds 0–100)
+
+Each scenario was also run head-to-head for every seed in `0..100` with identical topology, traffic, and link events:
+
+| Scenario | Seeds with SWARMNET ahead | Seeds tied | Seeds with SWARMNET behind |
+|---|---:|---:|---:|
+| `basic_delivery` | 0 | 101 | 0 |
+| `intermittent_contact` | 0 | 101 | 0 |
+| `route_disruption` | 97 | 4 | 0 |
+| `buffer_pressure` | 3 | 98 | 0 |
+
+Across 404 paired runs there were **zero delivery regressions** (SWARMNET never delivered fewer packets than the baseline). `intermittent_contact` ties on delivery with 1.00 s lower mean latency in every seed; `route_disruption` is strictly ahead in 97 of 101 seeds. The remaining `buffer_pressure` differences are within one tick of mean latency, not delivery count. This sweep is a robustness check, not a claim that SWARMNET dominates every possible network.
+
 ---
 
 ## Automated Test Suite
 
-Run the full pytest suite (36 unit, integration, and scenario tests):
+Run the full pytest suite (43 unit, integration, and scenario tests):
 
 ```bash
 cd backend

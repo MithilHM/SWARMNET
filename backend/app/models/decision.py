@@ -2,7 +2,7 @@
 
 import uuid
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -37,6 +37,10 @@ class CandidateScore(BaseModel):
     energy_penalty: float = 0.0
     link_available: bool = True
     estimated_remaining_contact_sec: Optional[float] = None
+    route_path: Optional[List[str]] = None
+    estimated_path_latency_ms: Optional[float] = None
+    estimated_path_hops: Optional[int] = None
+    path_reliability: Optional[float] = None
     reason: Optional[str] = None
 
 
