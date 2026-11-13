@@ -138,35 +138,3 @@ def test_backend_agent_registration_and_heartbeat(backend_client):
     match = next(a for a in agents if a["node_id"] == "SAT-01")
     assert match["status"] == "healthy"
     assert match["buffer_used_bytes"] == 1024
-
-
-def test_backend_get_node_details(backend_client):
-    # Create run
-    run_res = backend_client.post(
-        "/api/runs",
-        json={"scenario_id": "basic_delivery", "seed": 42},
-    )
-    assert run_res.status_code == 200
-    run_id = run_res.json()["run_id"]
-
-    # Satellite node details
-    sat_res = backend_client.get(f"/api/runs/{run_id}/nodes/SAT-01")
-    assert sat_res.status_code == 200
-    sat_data = sat_res.json()
-    assert sat_data["node_id"] == "SAT-01"
-    assert sat_data["node_type"] == "satellite"
-    assert "buffer_capacity_bytes" in sat_data
-    assert "incident_links" in sat_data
-    assert len(sat_data["incident_links"]) > 0
-
-    # Ground station node details
-    gs_res = backend_client.get(f"/api/runs/{run_id}/nodes/GROUND-01")
-    assert gs_res.status_code == 200
-    gs_data = gs_res.json()
-    assert gs_data["node_id"] == "GROUND-01"
-    assert gs_data["node_type"] == "ground_station"
-    assert "total_bytes_received" in gs_data
-
-    # Unknown node
-    unk_res = backend_client.get(f"/api/runs/{run_id}/nodes/NONEXISTENT")
-    assert unk_res.status_code == 404

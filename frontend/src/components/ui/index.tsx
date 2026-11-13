@@ -53,67 +53,6 @@ export function Chip({
   );
 }
 
-export function Panel({
-  title,
-  subtitle,
-  actions,
-  footer,
-  children,
-  flush = false,
-  id,
-  ariaLabel,
-}: {
-  title?: React.ReactNode;
-  subtitle?: React.ReactNode;
-  actions?: React.ReactNode;
-  footer?: React.ReactNode;
-  children: React.ReactNode;
-  flush?: boolean;
-  id?: string;
-  ariaLabel?: string;
-}) {
-  return (
-    <section className="panel" id={id} aria-label={ariaLabel}>
-      {title || actions ? (
-        <header className="panel-head">
-          <div className="stack-sm" style={{ gap: 1 }}>
-            {title ? <h2 className="panel-title">{title}</h2> : null}
-            {subtitle ? <p className="panel-sub">{subtitle}</p> : null}
-          </div>
-          {actions ? <div className="row">{actions}</div> : null}
-        </header>
-      ) : null}
-      <div className={flush ? "panel-body panel-body-flush" : "panel-body"}>{children}</div>
-      {footer ? <footer className="panel-foot">{footer}</footer> : null}
-    </section>
-  );
-}
-
-export function Figure({
-  label,
-  value,
-  unit,
-  note,
-  tone,
-}: {
-  label: React.ReactNode;
-  value: React.ReactNode;
-  unit?: React.ReactNode;
-  note?: React.ReactNode;
-  tone?: Tone;
-}) {
-  return (
-    <div className="figure">
-      <span className="figure-label">{label}</span>
-      <span className={`figure-value${tone ? ` ${toneClass[tone]}` : ""}`}>
-        {value}
-        {unit ? <small>{unit}</small> : null}
-      </span>
-      {note ? <span className="figure-note">{note}</span> : null}
-    </div>
-  );
-}
-
 export function Meter({
   value,
   max,
@@ -201,15 +140,5 @@ export function KeyValues({ items }: { items: Array<{ label: React.ReactNode; va
         </React.Fragment>
       ))}
     </dl>
-  );
-}
-
-export function SkeletonRows({ rows = 4, height = 14 }: { rows?: number; height?: number }) {
-  return (
-    <div className="stack-sm" aria-hidden="true">
-      {Array.from({ length: rows }).map((_, index) => (
-        <div key={index} className="skeleton" style={{ height, width: `${100 - index * 8}%` }} />
-      ))}
-    </div>
   );
 }
