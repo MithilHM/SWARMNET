@@ -69,7 +69,7 @@ This document tracks implementation status across all phases defined in `PRD.md`
 ### Phase 5: API & Persistence
 - [x] FastAPI application with REST endpoints (`backend/app/main.py`, `app/api/routes.py`).
 - [x] Run management: create, start, pause, resume, step, reset (`app/simulation/run_manager.py`).
-- [x] WebSocket streaming endpoint `/ws/runs/{run_id}` for live telemetry and client control.
+- [x] Live telemetry stream (now SSE: `GET /api/session/stream`, replacing the earlier `/ws/runs/{run_id}` WebSocket).
 - [x] SQLite database for runs, snapshots, and experiments (`app/persistence/database.py`).
 - [x] API integration tests (`test_api.py`) covering all endpoints, export, and comparisons (all passed).
 
@@ -80,7 +80,7 @@ This document tracks implementation status across all phases defined in `PRD.md`
 - [x] Container transport adapter (`backend/app/transport/container_transport.py`) enforcing logical link availability.
 - [x] Dual-mode execution support in `SimulationEngine` (`in_process` vs. `container`).
 - [x] Backend agent registration & heartbeat routes (`/api/agents/register`, `/api/agents/heartbeat`, `/api/agents`).
-- [x] Node inspection endpoint (`GET /api/runs/{run_id}/nodes/{node_id}`).
+- [x] Node state is part of the session snapshot (`GET /api/session`); the per-run node endpoint was removed with the playback API.
 - [x] Unit and integration tests for container transport, logical isolation, and agent service (`test_container_transport.py`, `test_agent_service.py`) (all passed).
 
 ### Phase 7: Frontend Dashboard

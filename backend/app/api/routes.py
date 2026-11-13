@@ -1,185 +1,43 @@
-"""FastAPI REST routes for SWARMNET simulation."""
+"""REST + server-sent-event API for the single shared simulation session.
 
-from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException, Query, Response
+Endpoints
+---------
+GET  /health                     liveness
+GET  /api/session                full state snapshot (scenario, events, routing, comparison)
+GET  /api/session/stream         SSE: snapshot on connect, then one frame per engine tick
+POST /api/session/play           start a run of the staged random scenario (optional {"seed": n})
+POST /api/session/solve          switch the affected satellite to DTN (only when DETECTED)
+POST /api/session/sever          {"satellite_id": "SAT-02"} cut that satellite's ground link
+POST /api/session/reset          back to IDLE with a freshly generated scenario
+GET  /api/session/export         JSON export of the current run (config, events, metrics)
+POST /api/agents/register        containerized agent registration
+POST /api/agents/heartbeat       containerized agent heartbeat
+GET  /api/agents                 registered agents
+"""
+
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.simulation.scenarios import ScenarioLoader
-from app.simulation.run_manager import RunManager
+from app.agents.registry import AgentRegistry
+from app.simulation.flow_engine import SimulationActionError
 
 router = APIRouter()
-run_manager = RunManager()
+agent_registry = AgentRegistry()
 
 
-class CreateRunRequest(BaseModel):
-    scenario_id: str
-    seed: Optional[int] = None
-    routing_policy: Optional[str] = None
-    duration: Optional[float] = None
-    transport_mode: Optional[str] = None
+def _session(request: Request):
+    return request.app.state.session
 
 
-class StepRunRequest(BaseModel):
-    ticks: int = Field(default=1, ge=1, le=100)
+class PlayRequest(BaseModel):
+    seed: Optional[int] = Field(default=None, ge=0, le=2**31 - 1, description="Replay a specific seed.")
 
 
-class CompareExperimentRequest(BaseModel):
-    scenario_id: str
-    seed: int = 42
-
-
-@router.get("/health")
-def health_check():
-    return {"status": "ok", "app": "SWARMNET", "version": "0.1.0"}
-
-
-@router.get("/api/scenarios")
-def list_scenarios():
-    scenario_ids = ScenarioLoader.list_available_scenarios()
-    scenarios = []
-    for sid in scenario_ids:
-        cfg = ScenarioLoader.load_scenario_by_id(sid)
-        if cfg:
-            scenarios.append({
-                "id": cfg.scenario.id,
-                "name": cfg.scenario.name,
-                "description": cfg.scenario.description,
-                "duration_seconds": cfg.scenario.duration_seconds,
-                "satellites_count": len(cfg.network.satellites),
-                "ground_stations_count": len(cfg.network.ground_stations),
-                "links_count": len(cfg.links),
-            })
-    return {"scenarios": scenarios}
-
-
-@router.get("/api/scenarios/{scenario_id}")
-def get_scenario(scenario_id: str):
-    cfg = ScenarioLoader.load_scenario_by_id(scenario_id)
-    if not cfg:
-        raise HTTPException(status_code=404, detail=f"Scenario '{scenario_id}' not found.")
-    return cfg.model_dump()
-
-
-@router.post("/api/runs")
-def create_run(req: CreateRunRequest):
-    try:
-        run = run_manager.create_run(
-            scenario_id=req.scenario_id,
-            seed=req.seed,
-            routing_policy=req.routing_policy,
-            duration=req.duration,
-            transport_mode=req.transport_mode,
-        )
-        return run.model_dump()
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.get("/api/runs")
-def list_runs(limit: int = 50):
-    return {"runs": run_manager.db.list_runs(limit=limit)}
-
-
-@router.get("/api/runs/{run_id}")
-def get_run(run_id: str):
-    info = run_manager.get_run_info(run_id)
-    if not info:
-        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
-    return info
-
-
-@router.post("/api/runs/{run_id}/step")
-def step_run(run_id: str, req: StepRunRequest = StepRunRequest()):
-    try:
-        return run_manager.step_run(run_id, ticks=req.ticks)
-    except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.post("/api/runs/{run_id}/pause")
-def pause_run(run_id: str):
-    try:
-        return run_manager.pause_run(run_id)
-    except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.post("/api/runs/{run_id}/resume")
-def resume_run(run_id: str):
-    try:
-        return run_manager.resume_run(run_id)
-    except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.post("/api/runs/{run_id}/reset")
-def reset_run(run_id: str):
-    try:
-        return run_manager.reset_run(run_id)
-    except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.get("/api/runs/{run_id}/topology")
-def get_topology(run_id: str):
-    try:
-        return run_manager.get_topology(run_id)
-    except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.get("/api/runs/{run_id}/metrics")
-def get_metrics(run_id: str):
-    try:
-        return run_manager.get_metrics(run_id)
-    except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.get("/api/runs/{run_id}/events")
-def get_events(run_id: str, limit: int = 100):
-    return {"events": run_manager.get_events(run_id, limit=limit)}
-
-
-@router.get("/api/runs/{run_id}/packets")
-def get_packets(run_id: str):
-    return run_manager.get_packets(run_id)
-
-
-@router.get("/api/runs/{run_id}/decisions")
-def get_decisions(run_id: str, limit: int = 50):
-    return {"decisions": run_manager.get_decisions(run_id, limit=limit)}
-
-
-@router.get("/api/runs/{run_id}/nodes/{node_id}")
-def get_node(run_id: str, node_id: str):
-    try:
-        return run_manager.get_node_details(run_id, node_id)
-    except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.get("/api/runs/{run_id}/export")
-def export_run(run_id: str, format: str = Query("json", pattern="^(json|csv)$")):
-    try:
-        content = run_manager.export_run(run_id, export_format=format)
-        media_type = "text/csv" if format == "csv" else "application/json"
-        filename = f"{run_id}_export.{format}"
-        return Response(
-            content=content,
-            media_type=media_type,
-            headers={"Content-Disposition": f"attachment; filename={filename}"},
-        )
-    except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.post("/api/experiments/compare")
-def compare_policies(req: CompareExperimentRequest):
-    try:
-        return run_manager.compare_policies(scenario_id=req.scenario_id, seed=req.seed)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+class SeverRequest(BaseModel):
+    satellite_id: str = Field(min_length=1, max_length=32)
 
 
 class AgentRegisterRequest(BaseModel):
@@ -195,25 +53,80 @@ class AgentHeartbeatRequest(BaseModel):
     buffer_used_bytes: int = 0
 
 
+@router.get("/health")
+def health_check():
+    return {"status": "ok", "app": "SWARMNET", "version": "0.2.0"}
+
+
+@router.get("/api/session")
+async def get_session(request: Request):
+    return _session(request).snapshot()
+
+
+@router.get("/api/session/stream")
+async def stream_session(request: Request):
+    session = _session(request)
+    return StreamingResponse(
+        session.stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/api/session/play")
+async def play(request: Request, req: Optional[PlayRequest] = None):
+    try:
+        return await _session(request).play(seed=req.seed if req else None)
+    except SimulationActionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.post("/api/session/solve")
+async def solve(request: Request):
+    try:
+        return await _session(request).solve()
+    except SimulationActionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.post("/api/session/sever")
+async def sever(request: Request, req: SeverRequest):
+    try:
+        return await _session(request).sever(req.satellite_id)
+    except SimulationActionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.post("/api/session/reset")
+async def reset(request: Request):
+    return await _session(request).reset()
+
+
+@router.get("/api/session/export")
+async def export(request: Request):
+    import json
+
+    session = _session(request)
+    run_id = session.engine.run_id or "IDLE"
+    return Response(
+        content=json.dumps(session.export(), indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename={run_id}_export.json"},
+    )
+
+
 @router.post("/api/agents/register")
 def register_agent(req: AgentRegisterRequest):
-    return run_manager.register_agent(
-        node_id=req.node_id,
-        node_type=req.node_type,
-        url=req.url,
-    )
+    return agent_registry.register(node_id=req.node_id, node_type=req.node_type, url=req.url)
 
 
 @router.post("/api/agents/heartbeat")
 def heartbeat_agent(req: AgentHeartbeatRequest):
-    return run_manager.record_agent_heartbeat(
-        node_id=req.node_id,
-        node_type=req.node_type,
-        uptime=req.uptime,
-        buffer_used_bytes=req.buffer_used_bytes,
+    return agent_registry.heartbeat(
+        node_id=req.node_id, node_type=req.node_type, uptime=req.uptime, buffer_used_bytes=req.buffer_used_bytes
     )
 
 
 @router.get("/api/agents")
 def get_agents():
-    return {"agents": run_manager.get_registered_agents()}
+    return {"agents": agent_registry.list()}

@@ -1,6 +1,5 @@
 # SWARMNET — Autonomous Delay-Tolerant Satellite Constellation Network
 
-[![Tests](https://img.shields.io/badge/tests-71%20passed-success)](https://github.com/)
 [![React](https://img.shields.io/badge/Frontend-React%2019%20%7C%20TypeScript%20%7C%20Three.js-blue)](https://vitejs.dev/)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI%20%7C%20Uvicorn-green)](https://fastapi.tiangolo.com/)
 [![Docker](https://img.shields.io/badge/Docker-Compose%20v2-2496ED)](https://www.docker.com/)
@@ -80,19 +79,44 @@ SWARMNET solves this with **autonomous, store-carry-forward packet routing**:
 
 ## Interface
 
-The frontend is a simulation workbench, not a live mission-control feed. Every number, link state, packet position, and routing decision comes from the backend run.
+The app is one guided simulation. The globe is the landing view; three tabs sit beside it. Every packet, link state, routing change, and number comes from the backend simulation engine as an event. The frontend only renders those events.
 
-| Workspace | What it answers |
+**Flow (backend state machine).**
+
+| Phase | What happens |
 | --- | --- |
-| **Overview** | Delivery ratio, loss reasons, delay distribution, buffering, topology load, run metadata, recent events, registered agents. |
-| **Constellation** | Schematic 3D globe with satellites, ground anchors, contact links, and packets in flight. Click any node or link for its detail. |
-| **Packets** | Every generated packet, its current holder, status, hop count, age or delivery delay, and full route history. |
-| **Routing** | Per-hop decisions with the candidate scores that produced them, including penalties and the chosen next hop. |
-| **Compare** | Runs baseline and SWARMNET on the same scenario and seed, then reports measured deltas and exports the active run. |
+| `IDLE` | A freshly generated random scenario is drawn: 4–5 satellites, 1–2 ground stations, satellite-to-ground links, and inter-satellite links (ISLs). Nothing moves. |
+| `STABLE` | After **Play**, about 2 s of nominal direct-to-ground traffic. |
+| `DEGRADING` | The topology changes on one satellite's ground link (rain fade, low elevation, obstruction, interference, or pointing error, per the seeded scenario) and packets start to be lost. |
+| `DETECTED` | The backend's rolling loss window on that link crosses the threshold (default: ≥ 50 % of the last 8 transmissions, at least 5 samples). The simulation pauses itself: red flash, red box around the satellite and its ground link, red dashed broken link, alert banner. **Solve** appears. |
+| `SOLVING` | The affected satellite switches from direct-to-ground to DTN store-carry-forward. Its bundles, including custody copies of lost packets, cross an ISL to the best-scoring relay, are stored there, then forwarded to the ground. The DTN path is drawn in green. |
+| `RESOLVED` | All bundles are delivered ("N/N bundles delivered via SAT-X"). Only **Reset** remains. |
 
-**3D constellation.** The globe is a faceted icosphere with land outlines derived from Natural Earth 1:110m (public domain). Orbital planes, phases, and ground anchors are derived deterministically from the run seed because scenarios carry only abstract coordinates. Motion is illustrative and not to scale; network state is not. Packets move only when the transport layer reports a handoff, and unavailable links are drawn dashed rather than animated. The scene is lazy-loaded, supports reduced motion, falls back to a keyboard-accessible object list when WebGL is unavailable, and never blocks the rest of the workspace.
+**Controls.** Play, Reset, Solve (shown only while an anomaly is detected), and Sever Link, which cuts a chosen satellite's ground link during `STABLE` or `DEGRADING` and drives the same anomaly flow. Playback controls (pause, step, speed, timeline) do not exist; the backend paces simulated time.
 
-**Controls.** Initialize a run from the top bar, then run or pause playback, advance by one or five simulated seconds, reset, and choose a playback speed. Keyboard shortcuts: `1` to `5` switch workspaces, `Space` toggles playback, `Right Arrow` advances one second, and `Escape` clears the active inspector.
+**Tabs.**
+
+| Tab | Content |
+| --- | --- |
+| **Packet Logs** | Live event log: simulated timestamp, packet id, source, hop path, status (sent / lost / stored / forwarded / delivered), and phase tag (stable / degrading / detected / DTN). Filter by phase or status. |
+| **Routing** | Per-satellite routing table before the anomaly and live, protocol per satellite, the affected satellite's old and new path, and relay candidates with scores. |
+| **Comparison** | The affected satellite under direct-to-ground only vs with DTN: delivery ratio, lost vs recovered, latency, hops, totals. Computed by the backend from this run. |
+
+Each Play runs a new scenario that is a pure function of its seed. The seed and scenario id are shown in the top bar and returned by the API, so any run can be replayed with `POST /api/session/play {"seed": n}`. The comparison's direct-only column is a deterministic replay of the same seed and operator actions with Solve never pressed. Playback is slowed 20× (the badge on the globe says so) so that millisecond link latencies are visible.
+
+### API
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Liveness |
+| `GET` | `/api/session` | Full snapshot: scenario, state, events, routing, comparison |
+| `GET` | `/api/session/stream` | Server-sent events: a snapshot on connect, then one frame per engine tick |
+| `POST` | `/api/session/play` | Start the staged scenario, or `{"seed": n}` to replay one; returns `run_id`, `seed`, `scenario_id` |
+| `POST` | `/api/session/solve` | Switch the affected satellite to DTN (409 unless `DETECTED`) |
+| `POST` | `/api/session/sever` | `{"satellite_id": "SAT-02"}` cuts that ground link (409 unless `STABLE`/`DEGRADING`) |
+| `POST` | `/api/session/reset` | Back to `IDLE` with a newly generated scenario |
+| `GET` | `/api/session/export` | JSON export of the run (config, seed, actions, events, metrics) |
+| `POST`/`GET` | `/api/agents/*` | Containerized agent registration and heartbeats |
 
 ---
 
@@ -224,32 +248,16 @@ Across 404 paired runs there were **zero delivery regressions** (SWARMNET never 
 
 ## Automated Test Suite
 
-Run the backend suite (43 unit, integration, and scenario tests):
-
 ```bash
-cd backend
-pytest -v
+cd backend && pytest -q      # engine, scenario generation, session API, plus the original routing/buffering suites
+cd frontend && npm test      # store, controls, tabs, globe geography
 ```
 
-Run the frontend suite (28 component, formatting, and geography tests):
-
-```bash
-cd frontend
-npm test
-```
-
-Test coverage includes:
-* `test_models.py`: Pydantic schema validation for packets, links, nodes, and events.
-* `test_clock.py`: Virtual clock stepping, pausing, resuming, and callback dispatch.
-* `test_buffering.py`: Buffer capacity bounds, priority eviction, and TTL expiration.
-* `test_routing_baseline.py`: Shortest path routing and partition buffering.
-* `test_routing_swarmnet.py`: Multi-factor candidate scoring and contact feasibility filtering.
-* `test_determinism.py`: Identical seed reproducibility.
-* `test_container_transport.py`: Logical link enforcement over network transports.
-* `test_api.py`: FastAPI routes, runs, stepping, topology, and comparison endpoints.
-* `test_scenario_delivery.py`: Full end-to-end multi-hop delivery across scenarios.
-* `frontend/src/**/*.test.tsx`: Workspace rendering, filtering, inspectors, comparison flow, and export links.
-* `frontend/src/**/*.test.ts`: Formatting helpers, link and buffer classification, and globe geography.
+Guided-flow coverage:
+* `tests/unit/test_flow_scenario.py`: scenario generation is deterministic per seed and varies across seeds (satellite count, failing satellite, failure pattern, latencies).
+* `tests/unit/test_flow_engine.py`: state machine order, auto-pause on detection, detection driven by loss rather than time, manual sever override, DTN relay delivery (A → relay → ground), recovery of lost packets, counterfactual replay, and resolution across many seeds.
+* `tests/integration/test_session_api.py`: full Play → DETECTED → Solve → RESOLVED → Reset through the API, phase gating (409s), seed replay, and the SSE stream.
+* `frontend/src/**/*.test.ts(x)`: snapshot/frame merging and reset in the shared store, controls (Solve only on anomaly, no playback controls), and the three tabs rendering backend data.
 
 ---
 

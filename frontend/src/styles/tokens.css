@@ -50,6 +50,9 @@
   --stage-link-active: #6fd3c6;
   --stage-link-degraded: #d9a13f;
   --stage-link-down: #4a5a62;
+  --stage-packet: #f2b48c;
+  --stage-alert: #ff4b3e;
+  --stage-dtn: #7be08f;
 
   /* Type */
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, "Segoe UI", sans-serif;

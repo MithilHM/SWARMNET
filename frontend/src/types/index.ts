@@ -1,291 +1,230 @@
-export type NodeStatus = "active" | "disabled";
+/** Wire types for the single shared simulation session (backend: app/simulation/session.py). */
 
-export interface NodePosition {
-  x: number;
-  y: number;
-  z?: number;
-  orbit_plane?: number;
-  orbit_index?: number;
-}
-
-export interface SatelliteNode {
-  satellite_id: string;
-  position?: NodePosition;
-  energy_percent: number;
-  buffer_capacity_bytes: number;
-  buffer_used_bytes: number;
-  status: NodeStatus;
-  neighbors: string[];
-  routing_table?: Record<string, unknown>;
-  last_state_update: number;
-}
-
-export interface GroundStationNode {
-  ground_station_id: string;
-  position?: NodePosition;
-  status: NodeStatus;
-  received_packet_ids: string[];
-  total_bytes_received: number;
-  last_contact_time?: number | null;
-}
-
+export type Phase = "IDLE" | "STABLE" | "DEGRADING" | "DETECTED" | "SOLVING" | "RESOLVED";
+export type PhaseTag = "idle" | "stable" | "degrading" | "detected" | "dtn";
+export type PacketLogStatus = "sent" | "lost" | "stored" | "forwarded" | "delivered";
+export type Protocol = "direct" | "dtn";
 export type LinkState = "active" | "degraded" | "down";
 
-export interface Link {
+export interface SimEvent {
+  seq: number;
+  run_id: string | null;
+  /** Simulated seconds since Play. */
+  t: number;
+  type:
+    | "run_started"
+    | "phase_change"
+    | "packet"
+    | "link_degraded"
+    | "link_severed"
+    | "link_recovered"
+    | "anomaly_detected"
+    | "protocol_switch"
+    | "route_change"
+    | "run_resolved";
+  phase: Phase;
+  tag: PhaseTag;
+  status: PacketLogStatus | null;
+  packet_id: string | null;
+  size_bytes: number | null;
+  source: string | null;
+  target: string | null;
+  hop_path: string[] | null;
+  link_id: string | null;
+  node_id: string | null;
+  message: string;
+  details: Record<string, unknown>;
+}
+
+export interface SessionNode {
+  id: string;
+  kind: "satellite" | "ground";
+  lat: number;
+  lon: number;
+  alt_km: number;
+  role: "affected" | "relay" | null;
+  ground_station_id?: string;
+  protocol?: Protocol;
+  buffer_used_bytes?: number;
+  buffer_capacity_bytes?: number;
+  stored_count?: number;
+  received_count?: number;
+  bytes_received?: number;
+}
+
+export interface SessionLink {
   link_id: string;
+  kind: "ground" | "isl";
   source_node_id: string;
   target_node_id: string;
   is_available: boolean;
   latency_ms: number;
   bandwidth_mbps: number;
   reliability: number;
-  contact_end_time?: number | null;
-  last_updated_at: number;
-  failure_reason?: string | null;
+  failure_reason: string | null;
+  state: LinkState;
+  loss_rate: number | null;
+  role: "anomaly" | "dtn" | null;
 }
 
-export type PacketPriority = "low" | "normal" | "high";
-
-export type PacketStatus =
-  | "created"
-  | "buffered"
-  | "in_transit"
-  | "delivered"
-  | "dropped"
-  | "expired";
-
-export interface RouteHop {
-  node_id: string;
-  arrived_at: number;
-  departed_at?: number | null;
-  link_id?: string | null;
-}
-
-export interface Packet {
-  packet_id: string;
-  source_node_id: string;
-  destination_node_id: string;
-  created_at: number;
-  expires_at?: number | null;
-  payload_size_bytes: number;
-  priority: PacketPriority;
-  current_node_id: string;
-  hop_count: number;
-  max_hops: number;
-  visited_node_ids: string[];
-  status: PacketStatus;
-  drop_reason?: string | null;
-  delivery_time?: number | null;
-  route_history: RouteHop[];
-}
-
-export interface CandidateScoreBreakdown {
-  neighbor_id?: string;
-  total_score?: number;
-  progress_score?: number;
-  reliability_score?: number;
-  contact_score?: number;
-  latency_penalty?: number;
-  congestion_penalty?: number;
-  energy_penalty?: number;
-  link_available?: boolean;
-}
-
-export interface RouteDecision {
-  decision_id: string;
-  packet_id: string;
-  satellite_id: string;
-  chosen_next_hop_id?: string | null;
-  decision: "forward" | "buffer" | "drop";
-  reason_code: string;
-  candidate_scores: Record<string, CandidateScoreBreakdown | number>;
-  decision_time: number;
-  routing_policy: string;
-  explanation?: string | null;
-}
-
-export interface MetricsSummary {
-  packets_generated: number;
-  packets_delivered: number;
-  packets_dropped: number;
-  packets_dropped_by_reason: Record<string, number>;
-  packets_expired: number;
-  packets_pending: number;
-  packets_in_transit: number;
-  delivery_ratio: number;
-  mean_delay_seconds: number;
-  median_delay_seconds: number;
-  p95_delay_seconds: number;
-  mean_hop_count: number;
-  total_bytes_generated: number;
-  total_bytes_delivered: number;
-  mean_time_buffered_seconds: number;
-  route_changes_count: number;
-  buffer_occupancy_by_node: Record<string, number>;
-  link_transferred_bytes: Record<string, number>;
-  delivered_delay_records?: number[];
-}
-
-export type RunStatus =
-  | "queued"
-  | "running"
-  | "paused"
-  | "completed"
-  | "failed"
-  | "stopped";
-
-export interface SimulationRun {
-  run_id: string;
-  scenario_id: string;
-  seed: number;
-  routing_policy: string;
-  started_at: number;
-  simulated_duration: number;
-  current_sim_time: number;
-  status: RunStatus;
-  config_snapshot?: Record<string, unknown>;
-  metrics_summary: MetricsSummary;
-  error_message?: string | null;
-}
-
-export interface InTransitPacket {
+export interface InFlightPacket {
   packet_id: string;
   link_id: string;
   source: string;
   target: string;
-  departure_time: number;
-  arrival_time: number;
-  payload_size_bytes: number;
+  depart: number;
+  arrive: number;
+  mode: "direct" | "dtn";
 }
 
-export interface TopologyData {
-  run_id: string;
-  simulated_time: number;
-  satellites: SatelliteNode[];
-  ground_stations: GroundStationNode[];
-  links: Link[];
-  in_transit: InTransitPacket[];
+export interface Anomaly {
+  satellite_id: string;
+  link_id: string;
+  ground_station_id: string;
+  loss_rate: number;
+  window_losses: number;
+  window_size: number;
+  threshold: number;
+  probable_cause: string;
+  detected_at: number;
 }
 
-export interface ScenarioSummary {
-  id: string;
-  name: string;
-  description: string;
-  duration_seconds: number;
-  satellites_count: number;
-  ground_stations_count: number;
-  links_count: number;
+export interface CandidateScore {
+  neighbor_id: string;
+  total_score: number;
+  reliability_score: number;
+  latency_penalty: number;
+  route_path: string[] | null;
+  estimated_path_latency_ms: number | null;
+  estimated_path_hops: number | null;
+  path_reliability: number | null;
+  reason: string | null;
 }
 
-export type TopologyEventType =
-  | "link_up"
-  | "link_down"
-  | "link_degraded"
-  | "link_recovered"
-  | "packet_generated"
-  | "packet_forwarded"
-  | "packet_buffered"
-  | "packet_in_transit"
-  | "packet_delivered"
-  | "packet_dropped"
-  | "packet_expired"
-  | "routing_decision";
-
-export interface TopologyEvent {
-  event_id?: string;
-  simulated_time: number;
-  event_type: TopologyEventType | string;
-  link_id?: string | null;
-  node_id?: string | null;
-  packet_id?: string | null;
-  details?: Record<string, unknown>;
+export interface RouteDecision {
+  decision_id: string;
+  satellite_id: string;
+  chosen_next_hop_id: string | null;
+  decision: "forward" | "buffer" | "drop";
+  reason_code: string;
+  candidate_scores: Record<string, CandidateScore>;
+  decision_time: number;
+  routing_policy: string;
+  explanation: string | null;
 }
 
-export interface ComparisonResult {
-  experiment_id: string;
+export interface DtnState {
+  satellite_id: string;
+  relay_id: string | null;
+  path: string[] | null;
+  link_ids: string[];
+  decision: RouteDecision;
+  switched_at?: number;
+}
+
+export interface RoutingRow {
+  satellite_id: string;
+  protocol: Protocol;
+  next_hop: string | null;
+  path: string[];
+  reason_code: string;
+  note: string;
+  ground_link_id: string;
+  ground_link_state: LinkState;
+  ground_link_reliability: number;
+  ground_link_loss_rate: number | null;
+  relay_for: string[];
+  stored_count: number;
+}
+
+export interface AffectedStats {
+  satellite_id: string;
+  total: number;
+  delivered: number;
+  lost: number;
+  unrecovered: number;
+  recovered: number;
+  delivery_ratio: number;
+  mean_latency_ms: number | null;
+  max_latency_ms: number | null;
+  mean_hops: number | null;
+  via_relay: number;
+}
+
+export interface Comparison {
+  satellite_id: string;
+  relay_id: string | null;
+  final: boolean;
+  direct_only: AffectedStats | null;
+  with_dtn: AffectedStats;
+  method: string;
+}
+
+export interface NetworkMetrics {
+  packets_generated: number;
+  packets_delivered: number;
+  packets_lost_direct: number;
+  packets_unrecovered: number;
+  packets_stored: number;
+  packets_in_transit: number;
+  delivery_ratio: number;
+  mean_delay_ms: number;
+  p95_delay_ms: number;
+  mean_hop_count: number;
+  total_bytes_delivered: number;
+}
+
+export interface Controls {
+  play: boolean;
+  solve: boolean;
+  sever: boolean;
+  reset: boolean;
+}
+
+export interface DynamicState {
+  run_id: string | null;
+  seed: number;
+  scenario_id: string;
+  phase: Phase;
+  version: number;
+  sim_time: number;
+  time_scale: number;
+  halted: boolean;
+  controls: Controls;
+  nodes: SessionNode[];
+  links: SessionLink[];
+  in_flight: InFlightPacket[];
+  anomaly: Anomaly | null;
+  dtn: DtnState | null;
+  failure: { satellite_id: string; link_id: string; cause: string | null; severed: boolean };
+  routing: { before: RoutingRow[] | null; current: RoutingRow[] | null; decisions: RouteDecision[] };
+  comparison: Comparison | null;
+  metrics: NetworkMetrics;
+}
+
+export interface ScenarioInfo {
   scenario_id: string;
   seed: number;
-  baseline: {
-    policy: string;
-    metrics: MetricsSummary;
-  };
-  swarmnet: {
-    policy: string;
-    metrics: MetricsSummary;
-  };
-  comparison_summary: {
-    delivery_ratio_diff: number;
-    delivered_count_diff: number;
-    mean_delay_diff: number;
-    dropped_diff: number;
-  };
+  time_scale: number;
+  tick_seconds: number;
+  stable_duration_s: number;
+  detection: { window_size: number; loss_threshold: number; min_samples: number };
+  post_solve_bundles: number;
 }
 
-export interface AgentInfo {
-  node_id: string;
-  node_type: string;
-  url: string;
-  status: string;
-  heartbeat_count: number;
-  uptime?: number;
-  buffer_used_bytes?: number;
+export interface Snapshot extends DynamicState {
+  scenario: ScenarioInfo;
+  events: SimEvent[];
 }
 
-export interface NodeDetailResponse {
-  run_id: string;
-  node_id: string;
-  node_type: "satellite" | "ground_station";
-  status: string;
-  position?: NodePosition;
-  energy_percent?: number;
-  buffer_capacity_bytes?: number;
-  buffer_used_bytes?: number;
-  buffer_packet_count?: number;
-  buffered_packets?: Packet[];
-  neighbors?: string[];
-  incident_links: Link[];
-  recent_decisions?: RouteDecision[];
-  total_bytes_received?: number;
-  received_packet_count?: number;
-  received_packets?: Packet[];
-  last_contact_time?: number | null;
-  last_state_update?: number;
-}
-
-/** Envelope pushed by `/ws/runs/{run_id}`. */
 export type StreamMessage =
-  | {
-      type: "initial_state";
-      run_id: string;
-      simulated_time: number;
-      status: RunStatus;
-      metrics: MetricsSummary;
-      topology: TopologyData;
-    }
-  | {
-      type: "event";
-      event: TopologyEvent;
-      simulated_time: number;
-      metrics: MetricsSummary;
-    }
-  | {
-      type: "step_result";
-      data: {
-        run_id: string;
-        simulated_time: number;
-        has_ended: boolean;
-        metrics: MetricsSummary;
-      };
-      topology: TopologyData;
-    }
-  | {
-      type: "pause_result" | "resume_result" | "reset_result";
-      data: { run_id: string; status: string; simulated_time: number; metrics: MetricsSummary };
-      topology?: TopologyData;
-    }
+  | { type: "snapshot"; reason: string; state: Snapshot }
+  | { type: "frame"; state: DynamicState; events: SimEvent[] }
   | { type: "error"; message: string };
 
-export type ViewKey = "overview" | "constellation" | "packets" | "routing" | "experiments";
-
-export type BackendState = "connecting" | "online" | "degraded" | "offline";
-export type StreamState = "idle" | "connecting" | "live" | "unavailable";
+export interface RunRef {
+  run_id: string | null;
+  seed: number;
+  scenario_id: string;
+  phase: Phase;
+}

@@ -1,304 +1,226 @@
-import type { SimulationSession } from "../app/useSimulationSession";
-import type {
-  ComparisonResult,
-  Link,
-  MetricsSummary,
-  Packet,
-  RouteDecision,
-  ScenarioSummary,
-  SimulationRun,
-  TopologyData,
-} from "../types";
+import type { SessionApi } from "../app/session";
+import type { DynamicState, ScenarioInfo, SimEvent, Snapshot } from "../types";
 
-export const sampleMetrics: MetricsSummary = {
-  packets_generated: 40,
-  packets_delivered: 28,
-  packets_dropped: 4,
-  packets_dropped_by_reason: { ttl_exceeded: 3, buffer_full: 1 },
-  packets_expired: 2,
-  packets_pending: 5,
-  packets_in_transit: 1,
-  delivery_ratio: 0.7,
-  mean_delay_seconds: 12.5,
-  median_delay_seconds: 10,
-  p95_delay_seconds: 24.25,
-  mean_hop_count: 2.4,
-  total_bytes_generated: 40960,
-  total_bytes_delivered: 28672,
-  mean_time_buffered_seconds: 3.5,
-  route_changes_count: 2,
-  buffer_occupancy_by_node: { "SAT-01": 2048, "SAT-02": 0 },
-  link_transferred_bytes: { "L-SAT01-SAT02": 8192 },
-};
-
-export const sampleScenario: ScenarioSummary = {
-  id: "basic_delivery",
-  name: "Basic delivery",
-  description: "Two satellites and one ground station with a scheduled contact window.",
-  duration_seconds: 120,
-  satellites_count: 2,
-  ground_stations_count: 1,
-  links_count: 3,
-};
-
-export const sampleRun: SimulationRun = {
-  run_id: "run-1234-abcd",
-  scenario_id: "basic_delivery",
+export const scenarioInfo: ScenarioInfo = {
+  scenario_id: "SCN-TEST0001",
   seed: 42,
-  routing_policy: "swarmnet",
-  started_at: 0,
-  simulated_duration: 120,
-  current_sim_time: 30,
-  status: "paused",
-  metrics_summary: sampleMetrics,
+  time_scale: 0.05,
+  tick_seconds: 0.0025,
+  stable_duration_s: 0.1,
+  detection: { window_size: 8, loss_threshold: 0.5, min_samples: 5 },
+  post_solve_bundles: 2,
 };
 
-export const sampleLinks: Link[] = [
-  {
-    link_id: "L-SAT01-SAT02",
-    source_node_id: "SAT-01",
-    target_node_id: "SAT-02",
-    is_available: true,
-    latency_ms: 120,
-    bandwidth_mbps: 20,
-    reliability: 0.95,
-    contact_end_time: 60,
-    last_updated_at: 0,
-  },
-  {
-    link_id: "L-SAT02-GROUND",
-    source_node_id: "SAT-02",
-    target_node_id: "GROUND-01",
-    is_available: false,
-    latency_ms: 240,
-    bandwidth_mbps: 10,
-    reliability: 0.6,
-    contact_end_time: 20,
-    last_updated_at: 0,
-    failure_reason: "contact window closed",
-  },
-];
+let seq = 0;
+export function evt(partial: Partial<SimEvent>): SimEvent {
+  seq += 1;
+  return {
+    seq,
+    run_id: "RUN-TEST",
+    t: 0.01 * seq,
+    type: "packet",
+    phase: "STABLE",
+    tag: "stable",
+    status: null,
+    packet_id: null,
+    size_bytes: null,
+    source: null,
+    target: null,
+    hop_path: null,
+    link_id: null,
+    node_id: null,
+    message: "",
+    details: {},
+    ...partial,
+  };
+}
 
-export const sampleTopology: TopologyData = {
-  run_id: "run-1234-abcd",
-  simulated_time: 30,
-  satellites: [
-    {
-      satellite_id: "SAT-01",
-      energy_percent: 82,
-      buffer_capacity_bytes: 1024,
-      buffer_used_bytes: 2048,
-      status: "active",
-      neighbors: ["SAT-02"],
-      last_state_update: 30,
-    },
-    {
-      satellite_id: "SAT-02",
-      energy_percent: 64,
-      buffer_capacity_bytes: 1024,
-      buffer_used_bytes: 0,
-      status: "active",
-      neighbors: ["SAT-01", "GROUND-01"],
-      last_state_update: 30,
-    },
-  ],
-  ground_stations: [
-    {
-      ground_station_id: "GROUND-01",
-      status: "active",
-      received_packet_ids: ["PKT-0001"],
-      total_bytes_received: 1024,
-      last_contact_time: 28,
-    },
-  ],
-  links: sampleLinks,
-  in_transit: [
-    {
-      packet_id: "PKT-0003",
-      link_id: "L-SAT01-SAT02",
-      source: "SAT-01",
-      target: "SAT-02",
-      departure_time: 29,
-      arrival_time: 31,
-      payload_size_bytes: 1024,
-    },
-  ],
-};
+export function resolvedEvents(): SimEvent[] {
+  seq = 0;
+  return [
+    evt({ type: "run_started", message: "Run started" }),
+    evt({ status: "sent", packet_id: "PKT-SAT-02-0001", source: "SAT-02", hop_path: ["SAT-02", "GROUND-01"], message: "sent" }),
+    evt({ status: "delivered", packet_id: "PKT-SAT-02-0001", source: "SAT-02", hop_path: ["SAT-02", "GROUND-01"], message: "delivered" }),
+    evt({ status: "lost", tag: "degrading", phase: "DEGRADING", packet_id: "PKT-SAT-02-0002", source: "SAT-02", hop_path: ["SAT-02", "GROUND-01"], link_id: "SAT-02-GROUND-01", message: "lost" }),
+    evt({ type: "anomaly_detected", tag: "detected", phase: "DETECTED", message: "Anomaly on SAT-02-GROUND-01" }),
+    evt({ status: "stored", tag: "dtn", phase: "SOLVING", packet_id: "PKT-SAT-02-0002", source: "SAT-02", hop_path: ["SAT-02"], message: "stored" }),
+    evt({ status: "forwarded", tag: "dtn", phase: "SOLVING", packet_id: "PKT-SAT-02-0002", source: "SAT-02", hop_path: ["SAT-02", "SAT-03"], message: "forwarded" }),
+    evt({ status: "delivered", tag: "dtn", phase: "SOLVING", packet_id: "PKT-SAT-02-0002", source: "SAT-02", hop_path: ["SAT-02", "SAT-03", "GROUND-01"], message: "delivered via SAT-03" }),
+    evt({ type: "run_resolved", tag: "dtn", phase: "RESOLVED", message: "2/2 bundles delivered via SAT-03" }),
+  ];
+}
 
-export const samplePackets: Packet[] = [
-  {
-    packet_id: "PKT-0001",
-    source_node_id: "SAT-01",
-    destination_node_id: "GROUND-01",
-    created_at: 2,
-    expires_at: 100,
-    payload_size_bytes: 1024,
-    priority: "high",
-    current_node_id: "GROUND-01",
-    hop_count: 2,
-    max_hops: 8,
-    visited_node_ids: ["SAT-01", "SAT-02", "GROUND-01"],
-    status: "delivered",
-    delivery_time: 18,
-    route_history: [
-      { node_id: "SAT-01", arrived_at: 2, departed_at: 4, link_id: null },
-      { node_id: "SAT-02", arrived_at: 5, departed_at: 9, link_id: "L-SAT01-SAT02" },
-      { node_id: "GROUND-01", arrived_at: 18, departed_at: null, link_id: "L-SAT02-GROUND" },
-    ],
-  },
-  {
-    packet_id: "PKT-0002",
-    source_node_id: "SAT-02",
-    destination_node_id: "GROUND-01",
-    created_at: 6,
-    expires_at: 90,
-    payload_size_bytes: 512,
-    priority: "normal",
-    current_node_id: "SAT-02",
-    hop_count: 1,
-    max_hops: 8,
-    visited_node_ids: ["SAT-02"],
-    status: "buffered",
-    drop_reason: null,
-    delivery_time: null,
-    route_history: [{ node_id: "SAT-02", arrived_at: 6, departed_at: null, link_id: null }],
-  },
-  {
-    packet_id: "PKT-0003",
-    source_node_id: "SAT-01",
-    destination_node_id: "GROUND-01",
-    created_at: 7,
-    expires_at: 80,
-    payload_size_bytes: 1024,
-    priority: "low",
-    current_node_id: "SAT-01",
-    hop_count: 0,
-    max_hops: 8,
-    visited_node_ids: ["SAT-01"],
-    status: "dropped",
-    drop_reason: "buffer_full",
-    delivery_time: null,
-    route_history: [{ node_id: "SAT-01", arrived_at: 7, departed_at: null, link_id: null }],
-  },
-];
+const routingRow = (id: string, protocol: "direct" | "dtn", path: string[]) => ({
+  satellite_id: id,
+  protocol,
+  next_hop: path[1] ?? null,
+  path,
+  reason_code: protocol === "dtn" ? "BEST_SCORE" : "DIRECT_DELIVERY",
+  note: "",
+  ground_link_id: `${id}-GROUND-01`,
+  ground_link_state: "active" as const,
+  ground_link_reliability: 0.99,
+  ground_link_loss_rate: 0,
+  relay_for: [] as string[],
+  stored_count: 0,
+});
 
-export const sampleDecisions: RouteDecision[] = [
-  {
-    decision_id: "DEC-0002",
-    packet_id: "PKT-0002",
-    satellite_id: "SAT-02",
-    chosen_next_hop_id: "GROUND-01",
-    decision: "forward",
-    reason_code: "best_score",
-    candidate_scores: {
-      "GROUND-01": {
-        total_score: 0.81,
-        progress_score: 0.9,
-        reliability_score: 0.88,
-        contact_score: 0.7,
-        latency_penalty: 0.12,
-        congestion_penalty: 0.03,
-        energy_penalty: 0.01,
-        link_available: true,
-      },
-      "SAT-01": 0.44,
-    },
-    decision_time: 12,
-    routing_policy: "swarmnet",
-    explanation: "GROUND-01 offers the strongest contact window.",
-  },
-  {
-    decision_id: "DEC-0001",
-    packet_id: "PKT-0001",
-    satellite_id: "SAT-01",
-    chosen_next_hop_id: "SAT-02",
-    decision: "forward",
-    reason_code: "best_score",
-    candidate_scores: { "SAT-02": 0.66 },
-    decision_time: 4,
-    routing_policy: "swarmnet",
-  },
-  {
-    decision_id: "DEC-0003",
-    packet_id: "PKT-0003",
-    satellite_id: "SAT-01",
-    chosen_next_hop_id: null,
-    decision: "drop",
-    reason_code: "buffer_full",
-    candidate_scores: {},
-    decision_time: 12,
-    routing_policy: "swarmnet",
-  },
-];
-
-export const sampleComparison: ComparisonResult = {
-  experiment_id: "exp-1",
-  scenario_id: "basic_delivery",
-  seed: 42,
-  baseline: {
-    policy: "baseline",
-    metrics: { ...sampleMetrics, packets_delivered: 20, delivery_ratio: 0.5, mean_delay_seconds: 15 },
-  },
-  swarmnet: {
-    policy: "swarmnet",
-    metrics: sampleMetrics,
-  },
-  comparison_summary: {
-    delivery_ratio_diff: 0.2,
-    delivered_count_diff: 8,
-    mean_delay_diff: -2.5,
-    dropped_diff: -1,
-  },
-};
-
-export function makeSession(overrides: Partial<SimulationSession> = {}): SimulationSession {
-  const noop = () => undefined;
-  const asyncNoop = async () => undefined;
-  const asyncTrue = async () => true;
-
-  const base: SimulationSession = {
-    scenarios: [sampleScenario],
-    scenario: sampleScenario,
-    selectedScenarioId: sampleScenario.id,
-    setSelectedScenarioId: noop,
-    selectedPolicy: "swarmnet",
-    setSelectedPolicy: noop,
+export function resolvedState(): DynamicState {
+  return {
+    run_id: "RUN-TEST",
     seed: 42,
-    setSeed: noop,
-    run: null,
-    runId: null,
-    topology: null,
-    metrics: null,
-    events: [],
-    packets: [],
-    decisions: [],
-    agents: [],
-    backend: "online",
-    stream: "live",
+    scenario_id: "SCN-TEST0001",
+    phase: "RESOLVED",
+    version: 10,
+    sim_time: 0.4,
+    time_scale: 0.05,
+    halted: true,
+    controls: { play: false, solve: false, sever: false, reset: true },
+    nodes: [
+      { id: "SAT-01", kind: "satellite", lat: 0, lon: 0, alt_km: 550, role: null, protocol: "direct" },
+      { id: "SAT-02", kind: "satellite", lat: 0, lon: 10, alt_km: 550, role: "affected", protocol: "dtn" },
+      { id: "SAT-03", kind: "satellite", lat: 0, lon: 20, alt_km: 550, role: "relay", protocol: "direct" },
+      { id: "SAT-04", kind: "satellite", lat: 0, lon: 30, alt_km: 550, role: null, protocol: "direct" },
+      { id: "GROUND-01", kind: "ground", lat: 5, lon: 15, alt_km: 0, role: null },
+    ],
+    links: [],
+    in_flight: [],
+    anomaly: {
+      satellite_id: "SAT-02",
+      link_id: "SAT-02-GROUND-01",
+      ground_station_id: "GROUND-01",
+      loss_rate: 0.625,
+      window_losses: 5,
+      window_size: 8,
+      threshold: 0.5,
+      probable_cause: "Rain fade at GROUND-01",
+      detected_at: 0.25,
+    },
+    dtn: {
+      satellite_id: "SAT-02",
+      relay_id: "SAT-03",
+      path: ["SAT-02", "SAT-03", "GROUND-01"],
+      link_ids: ["SAT-02-SAT-03", "SAT-03-GROUND-01"],
+      decision: {
+        decision_id: "d1",
+        satellite_id: "SAT-02",
+        chosen_next_hop_id: "SAT-03",
+        decision: "forward",
+        reason_code: "BEST_SCORE",
+        candidate_scores: {
+          "SAT-03": {
+            neighbor_id: "SAT-03",
+            total_score: 0.91,
+            reliability_score: 0.98,
+            latency_penalty: 0.8,
+            route_path: ["SAT-02", "SAT-03", "GROUND-01"],
+            estimated_path_latency_ms: 40,
+            estimated_path_hops: 2,
+            path_reliability: 0.98,
+            reason: "",
+          },
+          "SAT-01": {
+            neighbor_id: "SAT-01",
+            total_score: 0.7,
+            reliability_score: 0.97,
+            latency_penalty: 1,
+            route_path: ["SAT-02", "SAT-01", "GROUND-01"],
+            estimated_path_latency_ms: 50,
+            estimated_path_hops: 2,
+            path_reliability: 0.97,
+            reason: "",
+          },
+        },
+        decision_time: 0.25,
+        routing_policy: "dtn",
+        explanation: "Relay SAT-03 chosen",
+      },
+    },
+    failure: { satellite_id: "SAT-02", link_id: "SAT-02-GROUND-01", cause: "Rain fade at GROUND-01", severed: false },
+    routing: {
+      before: [routingRow("SAT-01", "direct", ["SAT-01", "GROUND-01"]), routingRow("SAT-02", "direct", ["SAT-02", "GROUND-01"])],
+      current: [routingRow("SAT-01", "direct", ["SAT-01", "GROUND-01"]), routingRow("SAT-02", "dtn", ["SAT-02", "SAT-03", "GROUND-01"])],
+      decisions: [],
+    },
+    comparison: {
+      satellite_id: "SAT-02",
+      relay_id: "SAT-03",
+      final: true,
+      method: "replay",
+      direct_only: {
+        satellite_id: "SAT-02",
+        total: 2,
+        delivered: 1,
+        lost: 1,
+        unrecovered: 1,
+        recovered: 0,
+        delivery_ratio: 0.5,
+        mean_latency_ms: 20,
+        max_latency_ms: 20,
+        mean_hops: 1,
+        via_relay: 0,
+      },
+      with_dtn: {
+        satellite_id: "SAT-02",
+        total: 2,
+        delivered: 2,
+        lost: 1,
+        unrecovered: 0,
+        recovered: 1,
+        delivery_ratio: 1,
+        mean_latency_ms: 45,
+        max_latency_ms: 70,
+        mean_hops: 1.5,
+        via_relay: 1,
+      },
+    },
+    metrics: {
+      packets_generated: 10,
+      packets_delivered: 9,
+      packets_lost_direct: 1,
+      packets_unrecovered: 0,
+      packets_stored: 0,
+      packets_in_transit: 0,
+      delivery_ratio: 0.9,
+      mean_delay_ms: 30,
+      p95_delay_ms: 70,
+      mean_hop_count: 1.1,
+      total_bytes_delivered: 40960,
+    },
+  };
+}
+
+export function idleState(): DynamicState {
+  return {
+    ...resolvedState(),
+    run_id: null,
+    phase: "IDLE",
+    controls: { play: true, solve: false, sever: false, reset: true },
+    anomaly: null,
+    dtn: null,
+    comparison: null,
+    routing: { before: null, current: null, decisions: [] },
+  };
+}
+
+export function snapshotOf(state: DynamicState, events: SimEvent[]): Snapshot {
+  return { ...state, scenario: scenarioInfo, events };
+}
+
+export function sessionApi(overrides: Partial<SessionApi> = {}): SessionApi {
+  return {
+    connection: "live",
+    state: resolvedState(),
+    scenario: scenarioInfo,
+    events: resolvedEvents(),
+    receivedAt: 0,
     pending: null,
     error: null,
-    setError: noop,
-    playing: false,
-    speed: 1,
-    setSpeed: noop,
-    simTime: 0,
-    duration: 120,
-    status: "queued",
-    progress: 0,
-    selectedNodeId: null,
-    selectedLinkId: null,
-    selectedLink: null,
-    nodeDetail: null,
-    nodeError: null,
-    initializeRun: asyncNoop,
-    step: asyncNoop,
-    togglePlay: asyncNoop,
-    reset: asyncNoop,
-    refreshTelemetry: asyncTrue,
-    selectNode: asyncNoop,
-    selectLink: noop,
-    closeInspector: noop,
+    play: async () => undefined,
+    solve: async () => undefined,
+    sever: async () => undefined,
+    reset: async () => undefined,
+    dismissError: () => undefined,
+    ...overrides,
   };
-
-  return { ...base, ...overrides };
 }

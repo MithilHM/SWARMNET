@@ -75,7 +75,14 @@ The platform demonstrates how satellite nodes can independently buffer, forward,
 
 ### 2.6 Persistence & API (`backend/app/persistence/`, `api/`)
 - **SQLite Storage:** Persists simulation run metadata, metrics summaries, and experiment comparison records.
-- **FastAPI Service:** Exposes REST endpoints (`/api/scenarios`, `/api/runs`, `/api/experiments`, etc.) and a WebSocket stream (`/ws/runs/{run_id}`) for live telemetry.
+- **FastAPI Service:** Exposes one shared simulation session (`/api/session`, `/play`, `/solve`, `/sever`, `/reset`, `/export`) and a server-sent event stream (`/api/session/stream`). See the README API table.
+
+### 2.7 Guided anomaly to DTN flow (`backend/app/simulation/scenario_generator.py`, `flow_engine.py`, `session.py`)
+- **Scenario generator:** `generate_scenario(seed)` is a pure function producing 4–5 satellites on a schematic ground track, 1–2 ground stations, one ground link per satellite, ISLs between neighbouring satellites, a traffic plan, and a failure plan (target satellite, cause, loss pattern: ramp, burst, or flapping).
+- **Flow engine:** a deterministic tick-based state machine `IDLE → STABLE → DEGRADING → DETECTED → SOLVING → RESOLVED`. Packets are real `Packet` objects with ids, paths, statuses, and timestamps; links are `Link` objects whose reliability the failure plan or a manual sever changes. Every transmission outcome on a ground link feeds a rolling window; detection fires only when the window's loss rate crosses the threshold, and the engine then halts.
+- **DTN switch:** `solve()` scores ISL paths to satellites with a healthy ground link (`0.7 × path reliability + 0.3 × (1 − latency / worst latency) − 0.05 × extra hops`), switches the affected satellite's protocol to DTN, and re-bundles everything it holds, including custody copies of packets lost on the direct link. Custody moves hop by hop only on a successful handoff (at-least-once with duplicate suppression).
+- **Comparison:** the direct-to-ground-only column replays the same seed and operator actions with DTN disabled, until the affected satellite has sent the same number of packets.
+- **Session:** one run on the backend. An asyncio task paces ticks against the wall clock (simulation slowed 20×) and fans out snapshots and frames over SSE. The frontend holds one store fed by that stream, so the globe and all tabs show the same run.
 
 ---
 
